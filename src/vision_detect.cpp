@@ -10,6 +10,7 @@
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
+#include "vision_detect.hpp"
 using namespace cv; 
 using namespace std;
 
@@ -25,6 +26,11 @@ Mat color_, gray_;
 vector<Point2f> corners_;
 float centroid_[3] = {0, 0, 0};
 vector<float> direction_ = {0, 0, 0};
+vector<Eigen::Matrix<float, 3, 1>> P_buffer;
+vector<Eigen::Quaternionf> q_buffer;
+std::ofstream fout_vision;
+int verbose = 1;
+int step = 0;
 
 sensor_msgs::Image color_frame;
 sensor_msgs::Image depth_frame;
@@ -88,55 +94,18 @@ void plane_from_points(vector<Point3f> points)
     direction_[0] = direction_[0] / length;
     direction_[1] = direction_[1] / length;
     direction_[2] = direction_[2] / length;
-    cout << "plane centroid: ";
-    for (int i = 0; i < 3; i++)
-    {
-        cout << " " << centroid_[i];
-    }
-    cout << endl;
-    cout << "plane norm direction: ";
-    for (int i = 0; i < 3; i++)
-    {
-        cout << " " << direction_[i];
-    }
-    cout << endl;
-}
-
-float points_distance(float points1[3], float points2[3])
-{
-    return sqrt(pow(points1[0] - points2[0], 2) + pow(points1[1] - points2[1], 2) + pow(points1[2] - points2[2], 2));
-}
-
-vector<float> vector_normalize(vector<float> vector)
-{   
-    float length = sqrt(pow(vector[0], 2) + pow(vector[1], 2) + pow(vector[2], 2));
-    vector[0] = vector[0] / length;
-    vector[1] = vector[1] / length;
-    vector[2] = vector[2] / length;
-    return vector;
-}
-
-vector<float> vector_product(vector<float> vector1, vector<float> vector2)
-{   
-    vector<float> vector3 = {0., 0., 0.};
-    vector3[0] = vector1[1] * vector2[2] - vector1[2] * vector2[1];
-    vector3[1] = vector1[2] * vector2[0] - vector1[0] * vector2[2];
-    vector3[2] = vector1[0] * vector2[1] - vector1[1] * vector2[0];
-    return vector3;
-}
-
-vector<float> RDF_2_FRD(vector<float> vector)
-{
-    float buffer = vector[0];
-    vector[0] = vector[2];
-    vector[2] = vector[1];
-    vector[1] = buffer;
-    return vector;
-}
-
-float parallel_check(float vector1[3], float vector2[3])
-{
-    return abs(vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector1[2]);
+    // cout << "plane centroid: ";
+    // for (int i = 0; i < 3; i++)
+    // {
+    //     cout << " " << centroid_[i];
+    // }
+    // cout << endl;
+    // cout << "plane norm direction: ";
+    // for (int i = 0; i < 3; i++)
+    // {
+    //     cout << " " << direction_[i];
+    // }
+    // cout << endl;
 }
 
 int main(int argc, char* argv[])
@@ -156,13 +125,16 @@ int main(int argc, char* argv[])
     pipe.start(cfg);
     rs2::frameset frames;
     rs2::align align_to_depth(RS2_STREAM_DEPTH);
-    ros::Rate rate(100.0);
+    ros::Rate rate(60.0);
+    fout_vision.open("/home/dji/catkin_ws/debug/mat_vision.txt", std::ios::out);
+    Eigen::Matrix<float, 3, 1> last_pub_P{0.0, 0.0, 0.0};
     for(int i = 0; i < 10; i++)
     {
         frames = pipe.wait_for_frames();
         // ros::spinOnce();
     }
     while(ros::ok()){ 
+        step++;
         frames = pipe.wait_for_frames();
         rs2::align align_to_color(RS2_STREAM_COLOR);
         frames = align_to_color.process(frames);
@@ -222,7 +194,7 @@ int main(int argc, char* argv[])
                 && hierarchy[hierarchy[hierarchy[*it][2]][2]][2] > 0 && hierarchy[hierarchy[hierarchy[hierarchy[*it][2]][2]][2]][2] < 0)
             {   
                 gap_index.push_back(*it);
-                cout << "gap index: " << *it << endl;
+                // cout << "gap index: " << *it << endl;
             }
         }
         for (list<int>::iterator it = gap_index.begin(); it != gap_index.end(); it++)
@@ -277,108 +249,108 @@ int main(int argc, char* argv[])
             int right_up_index;
             int right_down_index;
             for (int i = 0; i < 4; i++)   // find out quadrangle right and left index
-            {
-                if (out_corners[i].x < centroid_pixel[0])
                 {
-                    if (left_index_o[0] == 10)
+                    if (out_corners[i].x < centroid_pixel[0])
                     {
-                        left_index_o[0] = i;
+                        if (left_index_o[0] == 10)
+                        {
+                            left_index_o[0] = i;
+                        }
+                        else
+                        {
+                            left_index_o[1] = i;
+                        }
                     }
                     else
                     {
-                        left_index_o[1] = i;
+                        if (right_index_o[0] == 10)
+                        {
+                            right_index_o[0] = i;
+                        }
+                        else
+                        {
+                            right_index_o[1] = i; 
+                        }
                     }
                 }
-                else
-                {
-                    if (right_index_o[0] == 10)
-                    {
-                        right_index_o[0] = i;
-                    }
-                    else
-                    {
-                        right_index_o[1] = i; 
-                    }
-                }
-            }
             if (out_corners[left_index_o[0]].y < out_corners[left_index_o[1]].y) // find out quadrangle left_up_index and left_down_index
-            {
-                left_up_index = left_index_o[0];
-                left_down_index = left_index_o[1];
-            }
+                {
+                    left_up_index = left_index_o[0];
+                    left_down_index = left_index_o[1];
+                }
             else
-            {
-                left_up_index = left_index_o[1];
-                left_down_index = left_index_o[0];
-            }
+                {
+                    left_up_index = left_index_o[1];
+                    left_down_index = left_index_o[0];
+                }
             if (out_corners[right_index_o[0]].y < out_corners[right_index_o[1]].y) // find in quadrangle right_up_index and right_down_index
-            {
-                right_up_index = right_index_o[0];
-                right_down_index = right_index_o[1];
-            }
+                {
+                    right_up_index = right_index_o[0];
+                    right_down_index = right_index_o[1];
+                }
             else
-            {
-                right_up_index = right_index_o[1];
-                right_down_index = right_index_o[0];
-            }
+                {
+                    right_up_index = right_index_o[1];
+                    right_down_index = right_index_o[0];
+                }
             int out_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
             // cout << "out quadrangle index: " << out_quadr_index_[0] << ' ' << out_quadr_index_[1] << ' ' << out_quadr_index_[2] << ' ' << out_quadr_index_[3] << endl;
-            
+                
             int left_index_i[2] = {10};
             int right_index_i[2] = {10};
             for (int i = 0; i < 4; i++)   // find in quadrangle right and left index
-            {
-                if (in_corners[i].x < centroid_pixel[0])
                 {
-                    if (left_index_i[0] == 10)
+                    if (in_corners[i].x < centroid_pixel[0])
                     {
-                        left_index_i[0] = i;
+                        if (left_index_i[0] == 10)
+                        {
+                            left_index_i[0] = i;
+                        }
+                        else
+                        {
+                            left_index_i[1] = i;
+                        }
                     }
                     else
                     {
-                        left_index_i[1] = i;
+                        if (right_index_i[0] == 10)
+                        {
+                            right_index_i[0] = i;
+                        }
+                        else
+                        {
+                            right_index_i[1] = i; 
+                        }
                     }
                 }
-                else
-                {
-                    if (right_index_i[0] == 10)
-                    {
-                        right_index_i[0] = i;
-                    }
-                    else
-                    {
-                        right_index_i[1] = i; 
-                    }
-                }
-            }
             if (in_corners[left_index_i[0]].y < in_corners[left_index_i[1]].y) // find in quadrangle left_up_index and left_down_index
-            {
-                left_up_index = left_index_i[0];
-                left_down_index = left_index_i[1];
-            }
+                {
+                    left_up_index = left_index_i[0];
+                    left_down_index = left_index_i[1];
+                }
             else
-            {
-                left_up_index = left_index_i[1];
-                left_down_index = left_index_i[0];
-            }
+                {
+                    left_up_index = left_index_i[1];
+                    left_down_index = left_index_i[0];
+                }
             if (in_corners[right_index_i[0]].y < in_corners[right_index_i[1]].y) // find in quadrangle right_up_index and right_down_index
-            {
-                right_up_index = right_index_i[0];
-                right_down_index = right_index_i[1];
-            }
+                {
+                    right_up_index = right_index_i[0];
+                    right_down_index = right_index_i[1];
+                }
             else
-            {
-                right_up_index = right_index_i[1];
-                right_down_index = right_index_i[0];
-            }
+                {
+                    right_up_index = right_index_i[1];
+                    right_down_index = right_index_i[0];
+                }
             int in_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
             // cout << "in quadrangle index: " << in_quadr_index_[0] << ' ' << in_quadr_index_[1] << ' ' << in_quadr_index_[2] << ' ' << in_quadr_index_[3] << endl;
             vector<float> gap_direction_x = {0.,0.,0.};
             vector<float> gap_direction_z = {direction_[0], direction_[1], direction_[2]};
             for (int i = 0; i<3; i++)
-            {
-                gap_direction_x[i] = 0.5 * (in_points[in_quadr_index_[1]][i] + in_points[in_quadr_index_[2]][i] - in_points[in_quadr_index_[0]][i] - in_points[in_quadr_index_[3]][i]);
-            }
+                {
+                    gap_direction_x[i] = 0.5 * (in_points[in_quadr_index_[1]][i] + in_points[in_quadr_index_[2]][i] - in_points[in_quadr_index_[0]][i] - in_points[in_quadr_index_[3]][i]);
+                }
             vector<float> gap_direction_y = vector_product(gap_direction_z, gap_direction_x);
             float length_ = norm(gap_direction_y);
             for (int i = 0; i<3; i++)
@@ -386,40 +358,76 @@ int main(int argc, char* argv[])
                 gap_direction_y[i] = float(gap_direction_y[i] / length_);
             }
             gap_direction_x = vector_product(gap_direction_y, gap_direction_z);
-            cout << "plane x direction: ";
-            for (int i = 0; i < 3; i++)
-            {
-               cout << " " << gap_direction_x[i];
-            }
-            cout << endl;
-            cout << "plane y direction: ";
-            for (int i = 0; i < 3; i++)
-            {
-               cout << " " << gap_direction_y[i];
-            }
-            cout << endl;
+            // cout << "plane x direction: ";
+            // for (int i = 0; i < 3; i++)
+            // {
+            //     cout << " " << gap_direction_x[i];
+            // }
+            // cout << endl;
+            // cout << "plane y direction: ";
+            // for (int i = 0; i < 3; i++)
+            // {
+            //     cout << " " << gap_direction_y[i];
+            // }
+            // cout << endl;
             vector<float> gap_center = {centroid_[0], centroid_[1], centroid_[2]};
             gap_center = RDF_2_FRD(gap_center);
             gap_direction_x = RDF_2_FRD(gap_direction_x);
             gap_direction_y = RDF_2_FRD(gap_direction_y);
             gap_direction_z = RDF_2_FRD(gap_direction_z);
+            if (verbose > 0)
+            {
+                Eigen::Matrix<float,1,3> gap_center_eigen(gap_center[0], gap_center[1], gap_center[2]);
+                Eigen::Matrix<float,1,3> gap_direction_x_eigen(gap_direction_x[0], gap_direction_x[1], gap_direction_x[2]);
+                Eigen::Matrix<float,1,3> gap_direction_y_eigen(gap_direction_y[0], gap_direction_y[1], gap_direction_y[2]);
+                Eigen::Matrix<float,1,3> gap_direction_z_eigen(gap_direction_z[0], gap_direction_z[1], gap_direction_z[2]);
+                fout_vision << step << " " << gap_center_eigen << " " << gap_direction_x_eigen \
+                << " " << gap_direction_y_eigen << " " << gap_direction_z_eigen << std::endl; 
+            }
             Eigen::Matrix<float, 3, 3> R;
-            R << gap_direction_z[0], gap_direction_z[1], gap_direction_z[2],
-                 gap_direction_x[0], gap_direction_x[1], gap_direction_x[2],
-                 gap_direction_y[0], gap_direction_y[1], gap_direction_y[2];
+            R << gap_direction_z[0], gap_direction_x[0], gap_direction_y[0],
+                gap_direction_z[1], gap_direction_x[1], gap_direction_y[1],
+                gap_direction_z[2], gap_direction_x[2], gap_direction_y[2];
             Eigen::Matrix<float, 3, 1> P;
             P << gap_center[0], gap_center[1], gap_center[2];
             Eigen::Quaternionf q(R);
-
-            gap_pose.pose.position.x = gap_center[0];
-            gap_pose.pose.position.y = gap_center[1];
-            gap_pose.pose.position.z = gap_center[2];
-            gap_pose.pose.orientation.x = q.x();
-            gap_pose.pose.orientation.y = q.y();
-            gap_pose.pose.orientation.z = q.z();
-            gap_pose.pose.orientation.w = q.w();
-            gap_pose.header.stamp = ros::Time::now();
-            gap_pose_pub.publish(gap_pose);
+            P_buffer.push_back(P);
+            q_buffer.push_back(q);
+        }
+        if (!P_buffer.empty())
+        {
+            float distance = P_buffer[0].norm();
+            int index = 0;
+            for (int i=0; i<P_buffer.size(); i++)
+            {
+                if (P_buffer[i].norm() < distance)
+                {
+                    index = i;
+                    distance = P_buffer[i].norm();
+                }
+            }
+            std::cout << "gap index: " << index << std::endl;
+            Eigen::Matrix<float, 3, 1> pub_P = P_buffer[index];
+            Eigen::Quaternionf pub_q = q_buffer[index];
+            std::cout << "P: " << pub_P << std::endl;
+            // std::cout << "q: " << pub_q << std::endl;
+            P_buffer.clear();
+            q_buffer.clear();
+            if ((pub_P - last_pub_P).norm() < 0.05 || last_pub_P.norm() < 0.01)
+            {
+                gap_pose.pose.position.x = pub_P[0];
+                gap_pose.pose.position.y = pub_P[1];
+                gap_pose.pose.position.z = pub_P[2];
+                gap_pose.pose.orientation.x = pub_q.x();
+                gap_pose.pose.orientation.y = pub_q.y();
+                gap_pose.pose.orientation.z = pub_q.z();
+                gap_pose.pose.orientation.w = pub_q.w();
+                gap_pose.header.stamp = ros::Time::now();
+                gap_pose_pub.publish(gap_pose); 
+            } 
+            last_pub_P = pub_P;
+        }
+        
             
             // vector<Point2f> corners_sort_vec(8);
             // for (int i = 0; i < 4; i++)
@@ -483,7 +491,6 @@ int main(int argc, char* argv[])
             //     pixels_camera_vec[i] = Point2f(pixels_camera[i][0], pixels_camera[i][1]);
             //     circle( color_, pixels_camera_vec[i], radius, Scalar(200, 0, 0), CV_FILLED);
             // }
-        }
         rate.sleep();
     }
     // namedWindow("imgContour", CV_WINDOW_AUTOSIZE);

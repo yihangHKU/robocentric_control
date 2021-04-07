@@ -278,12 +278,10 @@ public:
 		flatted_state f_ = f(x_, i_in);
 		cov_ f_x_ = f_x(x_, i_in);
 		cov f_x_final;
-
 		Matrix<scalar_type, m, process_noise_dof> f_w_ = f_w(x_, i_in);
 		Matrix<scalar_type, n, process_noise_dof> f_w_final;
 		state x_before = x_;
 		x_.oplus(f_, dt);
-
 		F_x1 = cov::Identity();
 		for (std::vector<std::pair<std::pair<int, int>, int> >::iterator it = x_.vect_state.begin(); it != x_.vect_state.end(); it++) {
 			int idx = (*it).first.first;
@@ -327,7 +325,6 @@ public:
 			}
 		}
 		
-		
 		Matrix<scalar_type, 2, 3> res_temp_S2;
 		Matrix<scalar_type, 2, 2> res_temp_S2_;
 		MTK::vect<3, scalar_type> seg_S2;
@@ -358,7 +355,6 @@ public:
 			Eigen::Matrix<scalar_type, 3, 3> x_before_hat;
 			x_before.S2_hat(x_before_hat, idx);
 			res_temp_S2 = -Nx * res.toRotationMatrix() * x_before_hat*MTK::A_matrix(seg_S2).transpose();
-			
 			for(int i = 0; i < n; i++){
 				f_x_final. template block<2, 1>(idx, i) = res_temp_S2 * (f_x_. template block<3, 1>(dim, i));
 				
@@ -367,7 +363,6 @@ public:
 				f_w_final. template block<2, 1>(idx, i) = res_temp_S2 * (f_w_. template block<3, 1>(dim, i));
 			}
 		}
-	
 	#ifdef USE_sparse
 		f_x_1.makeCompressed();
 		spMt f_x2 = f_x_final.sparseView();
@@ -392,7 +387,6 @@ public:
 		bool valid = true;    
 		state x_propagated = x_;
 		cov P_propagated = P_;
-		
 		for(int i=-1; i<maximum_iter; i++)
 		{
 			vectorized_state dx, dx_new;
@@ -425,7 +419,7 @@ public:
 				res_temp_SO3 = A_matrix(seg_SO3).transpose();
 				dx_new.template block<3, 1>(idx, 0) = res_temp_SO3 * dx.template block<3, 1>(idx, 0);
 				for(int i = 0; i < n; i++){
-					P_. template block<3, 1>(idx, i) = res_temp_SO3 * (P_. template block<3, 1>(idx, i));	
+					P_. template block<3, 1>(idx, i) = res_temp_SO3 * (P_. template block<3, 1>(idx, i));
 				}
 				for(int i = 0; i < n; i++){
 					P_. template block<1, 3>(i, idx) =(P_. template block<1, 3>(i, idx)) *  res_temp_SO3.transpose();	
@@ -487,9 +481,10 @@ public:
 			}
 			Matrix<scalar_type, l, 1> innovation; 
 			z.boxminus(innovation, h(x_, valid));
+			std::cout << "innovation: " << innovation << std::endl;
 			cov K_x = K_ * h_x_;
 			Matrix<scalar_type, n, 1> dx_ = K_ * innovation + (K_x  - Matrix<scalar_type, n, n>::Identity()) * dx_new;
-        	state x_before = x_;
+			state x_before = x_;
 			x_.boxplus(dx_);
 
 			converg = true;

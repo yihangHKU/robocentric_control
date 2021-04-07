@@ -11,7 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(OpenCV REQUIRED)
-find_package(realsense2 2.39.0)
+find_package(realsense2 2.43.0)
 
 catkin_package(
 #  INCLUDE_DIRS include
@@ -30,5 +30,3 @@ add_executable(state_estim src/state_estim.cpp)
 target_link_libraries(state_estim ${catkin_LIBRARIES})
 add_executable(vision_detect src/vision_detect.cpp)
 target_link_libraries(vision_detect ${catkin_LIBRARIES} ${realsense2_LIBRARY} ${OpenCV_LIBS})
-add_executable(vision_test src/vision_test.cpp)
-target_link_libraries(vision_test ${catkin_LIBRARIES} ${realsense2_LIBRARY} ${OpenCV_LIBS})
