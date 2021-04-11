@@ -220,15 +220,34 @@ int main(int argc, char* argv[])
             float in_pixels[4][2];
             vector<Point3f> points_vec(0);
             vector<Point2f> pixels_vec(0);
+            int range = 3;
             for (int i = 0; i < 4; i++)
             {   
+                float out_corner_depth = depth_frame.get_distance(out_corners[i].x, out_corners[i].y);
+                float in_corner_depth = depth_frame.get_distance(in_corners[i].x, in_corners[i].y);
+                for (int j = -range; j < range+1; j++)
+                {
+                    for(int k = -range; k < range+1; k++)
+                    {
+                        float depth_search = depth_frame.get_distance(out_corners[i].x + k, out_corners[i].y + j);
+                        if(depth_search > 0.05 && depth_search < out_corner_depth || out_corner_depth < 0.05)
+                        {
+                            out_corner_depth = depth_search;
+                        }
+                        depth_search = depth_frame.get_distance(in_corners[i].x + k, in_corners[i].y + j);
+                        if(depth_search > 0.05 && depth_search < in_corner_depth || in_corner_depth < 0.05)
+                        {
+                            in_corner_depth = depth_search;
+                        }
+                    }
+                }
                 // cout << "corner pixels depth: " << depth_frame.get_distance(out_corners[i].x, out_corners[i].y) << endl;
                 out_pixels[i][0] = out_corners[i].x;
                 out_pixels[i][1] = out_corners[i].y;
                 in_pixels[i][0] = in_corners[i].x;
                 in_pixels[i][1] = in_corners[i].y;
-                rs2_deproject_pixel_to_point(out_points[i], &depth_intrins, out_pixels[i], depth_frame.get_distance(out_corners[i].x, out_corners[i].y));
-                rs2_deproject_pixel_to_point(in_points[i], &depth_intrins, in_pixels[i], depth_frame.get_distance(in_corners[i].x, in_corners[i].y));
+                rs2_deproject_pixel_to_point(out_points[i], &depth_intrins, out_pixels[i], out_corner_depth);
+                rs2_deproject_pixel_to_point(in_points[i], &depth_intrins, in_pixels[i], in_corner_depth);
                 points_vec.push_back(Point3f(out_points[i][0], out_points[i][1], out_points[i][2]));
                 points_vec.push_back(Point3f(in_points[i][0], in_points[i][1], in_points[i][2]));
                 pixels_vec.push_back(Point2f(out_pixels[i][0], out_pixels[i][1]));
