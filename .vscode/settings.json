@@ -55,6 +55,10 @@
         "iterator": "cpp",
         "core": "cpp",
         "geometry": "cpp",
-        "sparse": "cpp"
+        "sparse": "cpp",
+        "csignal": "cpp",
+        "unordered_set": "cpp",
+        "hash_map": "cpp",
+        "hash_set": "cpp"
     }
 }
