@@ -3,6 +3,7 @@
 #include <opencv2/opencv.hpp>
 #include <librealsense2/rs.hpp>
 #include <librealsense2/rsutil.h>
+#include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -18,7 +19,7 @@ using namespace std;
 
 int maxCorners = 20;
 int maxTrackbar = 100;
-int radius = 2;
+int radius = 4;
 RNG rng(12345);
 const char* source_window = "Source image";
 const char* corners_window = "Corners detected";
@@ -107,7 +108,19 @@ void plane_from_points(vector<Point3f> points)
     // }
     // cout << endl;
 }
-
+void color_cb(const sensor_msgs::Image::ConstPtr &msg)
+{
+    cv_bridge::CvImagePtr cv_ptr;
+    try
+    {
+       cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+    }
+    catch (cv_bridge::Exception& e)
+    {
+        ROS_ERROR("cv_bridge exception: %s", e.what());
+        return;
+    }
+}
 int main(int argc, char* argv[])
 {   
     ros::init(argc, argv, "state_estim");
@@ -115,7 +128,11 @@ int main(int argc, char* argv[])
 
     ros::Publisher gap_pose_pub = nh.advertise<geometry_msgs::PoseStamped>
             ("camera/gap_pose", 100);
-
+    ros::Publisher color_pub = nh.advertise<sensor_msgs::Image>
+            ("camera/color_raw", 100);
+    sensor_msgs::Image img_msg;
+    std_msgs::Header header;
+    cv_bridge::CvImage img_bridge;
     rs2::pipeline pipe;
     rs2::config cfg;
     rs2::colorizer color_map;
@@ -211,8 +228,8 @@ int main(int argc, char* argv[])
             {
                 out_corners.push_back(contours[*it][i]);
                 in_corners.push_back(contours[inner_contour_index][i]);
-                circle( color_, out_corners[i], radius, Scalar(0, 0, 200), CV_FILLED );
-                circle( color_, in_corners[i], radius, Scalar(0, 0, 200), CV_FILLED );
+                circle( color_, out_corners[i], radius, Scalar(200, 0, 0), CV_FILLED );
+                circle( color_, in_corners[i], radius, Scalar(200, 0, 0), CV_FILLED );
             }
             float out_points[4][3];
             float out_pixels[4][2];
@@ -220,7 +237,7 @@ int main(int argc, char* argv[])
             float in_pixels[4][2];
             vector<Point3f> points_vec(0);
             vector<Point2f> pixels_vec(0);
-            int range = 3;
+            int range = 5;
             for (int i = 0; i < 4; i++)
             {   
                 float out_corner_depth = depth_frame.get_distance(out_corners[i].x, out_corners[i].y);
@@ -228,16 +245,22 @@ int main(int argc, char* argv[])
                 for (int j = -range; j < range+1; j++)
                 {
                     for(int k = -range; k < range+1; k++)
-                    {
-                        float depth_search = depth_frame.get_distance(out_corners[i].x + k, out_corners[i].y + j);
-                        if(depth_search > 0.05 && depth_search < out_corner_depth || out_corner_depth < 0.05)
+                    {   
+                        if (0 < out_corners[i].x + k && out_corners[i].x + k < width && 0 < out_corners[i].y + j && out_corners[i].y + j < height)
                         {
-                            out_corner_depth = depth_search;
+                            float depth_search = depth_frame.get_distance(out_corners[i].x + k, out_corners[i].y + j);
+                            if(depth_search > 0.05 && depth_search < out_corner_depth || out_corner_depth < 0.05)
+                            {
+                                out_corner_depth = depth_search;
+                            }
                         }
-                        depth_search = depth_frame.get_distance(in_corners[i].x + k, in_corners[i].y + j);
-                        if(depth_search > 0.05 && depth_search < in_corner_depth || in_corner_depth < 0.05)
+                        if (0 < in_corners[i].x + k && in_corners[i].x + k < width && 0 <in_corners[i].y + j && in_corners[i].y + j < height)
                         {
-                            in_corner_depth = depth_search;
+                            float depth_search_in = depth_frame.get_distance(in_corners[i].x + k, in_corners[i].y + j);
+                            if(depth_search_in > 0.05 && depth_search_in < in_corner_depth || in_corner_depth < 0.05)
+                            {
+                                in_corner_depth = depth_search_in;
+                            }
                         }
                     }
                 }
@@ -260,7 +283,7 @@ int main(int argc, char* argv[])
             // cout << "centroid pixel: " << centroid_pixel[0] << " " << centroid_pixel[1] << endl;
             vector<Point2f> centroid_pixel_(1);
             centroid_pixel_[0] = Point2f(centroid_pixel[0], centroid_pixel[1]);
-            circle( color_, centroid_pixel_[0], radius, Scalar(0, 0, 200), CV_FILLED );
+            circle( color_, centroid_pixel_[0], radius, Scalar(200, 0, 0), CV_FILLED );
             int left_index_o[2] = {10};
             int right_index_o[2] = {10};
             int left_up_index;
@@ -413,6 +436,9 @@ int main(int argc, char* argv[])
             P_buffer.push_back(P);
             q_buffer.push_back(q);
         }
+        img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8, color_);
+        img_bridge.toImageMsg(img_msg);
+        color_pub.publish(img_msg);
         if (!P_buffer.empty())
         {
             float distance = P_buffer[0].norm();

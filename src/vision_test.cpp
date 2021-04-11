@@ -239,7 +239,7 @@ int main()
         float in_pixels[4][2];
         vector<Point3f> points_vec(0);
         vector<Point2f> pixels_vec(0);
-        int range = 3;
+        int range = 5;
         for (int i = 0; i < 4; i++)
         {   
             cout << "origin out corner pixels depth: " << depth_frame.get_distance(out_corners[i].x, out_corners[i].y) << endl;
