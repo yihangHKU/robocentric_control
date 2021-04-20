@@ -6,6 +6,7 @@
 #include "state_estim.hpp"
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/Vector3Stamped.h>
 
 
 std::deque<sensor_msgs::Imu::ConstPtr> imu_buffer;
@@ -60,6 +61,12 @@ int main(int argc, char* argv[])
     fout_input.open("/home/dji/catkin_ws/debug/imu.txt", std::ios::out);
     ros::Subscriber imu_sub = nh.subscribe("/mavros/imu/data_raw", 1000, imu_cb);
     ros::Subscriber gap_sub = nh.subscribe("/camera/gap_pose", 1000, gap_cb);
+    ros::Publisher pose_pub = nh.advertise<geometry_msgs::PoseStamped> ("robocentric/pose", 100);
+    ros::Publisher grav_pub = nh.advertise<geometry_msgs::Vector3Stamped> ("robocentric/gravity", 100);
+    ros::Publisher vel_pub = nh.advertise<geometry_msgs::Vector3Stamped> ("robocentric/velocity", 100);
+    geometry_msgs::PoseStamped pose;
+    geometry_msgs::Vector3Stamped grav;
+    geometry_msgs::Vector3Stamped vel;
     double step = 0;
     ros::Rate rate(3000);
     const int process_noise_dof = 12;
@@ -85,6 +92,7 @@ int main(int argc, char* argv[])
     double dt = 0;
     bool flg_predict_init = false;
     bool flg_state_init = false;
+    double pub_time_last = 0.0;
     input imu_input;
     measurement gap_measure;
     Eigen::Quaternionf q;
@@ -104,13 +112,13 @@ int main(int argc, char* argv[])
                 init_state.offset_R_C_B.y() = 0;
                 init_state.offset_R_C_B.z() = 0;
                 init_state.offset_R_C_B.w() = 1;
-                init_state.offset_P_C_B[0] = -0.075;
+                init_state.offset_P_C_B[0] = -0.05;
                 init_state.offset_P_C_B[1] = 0;
-                init_state.offset_P_C_B[2] = 0.035;
+                init_state.offset_P_C_B[2] = 0.11;
                 vect3 offset_P_C_B;
-                offset_P_C_B[0] = -0.075;
+                offset_P_C_B[0] = -0.05;
                 offset_P_C_B[1] = 0;
-                offset_P_C_B[2] = 0.035;
+                offset_P_C_B[2] = 0.11;
                 Eigen::Matrix<double, 3, 1> p_c_r;
                 p_c_r << gap_buffer.front()->pose.position.x, gap_buffer.front()->pose.position.y, gap_buffer.front()->pose.position.z;
                 init_state.pos = init_state.offset_R_C_B.toRotationMatrix().inverse() * (p_c_r - init_state.offset_P_C_B);
@@ -166,9 +174,12 @@ int main(int argc, char* argv[])
             state s_log = kf.get_x();
             Eigen::Vector3d euler_cur = SO3ToEuler(s_log.rot);
             Eigen::Vector3d euler_offset = SO3ToEuler(s_log.offset_R_C_B);
+            Eigen::Vector3d grav_r = s_log.rot.toRotationMatrix().transpose() * s_log.grav.vec;
+            Eigen::Vector3d pos_r = - s_log.rot.toRotationMatrix().transpose() * s_log.pos;
             fout_pre << step << " " << euler_cur.transpose() << " " << s_log.pos.transpose() << " " << s_log.vel.transpose() \
             << " " << s_log.bg.transpose() << " " << s_log.ba.transpose()<< " " << s_log.grav.vec.transpose() \
-            << " " << s_log.offset_P_C_B.transpose() << " " << euler_offset.transpose() << std::endl;
+            << " " << s_log.offset_P_C_B.transpose() << " " << euler_offset.transpose() << " " << grav_r.transpose() <<  " " \
+            << pos_r.transpose() << std::endl;
             // fout_pre << step << " " << euler_cur.transpose() << " " << s_log.pos.transpose() << " " << s_log.vel.transpose() \
             // << " " << s_log.grav.vec.transpose() << std::endl;
             gap_measure.R_cr.x() = gap_buffer.front()->pose.orientation.x;
@@ -182,11 +193,13 @@ int main(int argc, char* argv[])
             s_log = kf.get_x();
             euler_cur = SO3ToEuler(s_log.rot);
             euler_offset = SO3ToEuler(s_log.offset_R_C_B);
+            grav_r = s_log.rot.toRotationMatrix().transpose() * s_log.grav.vec;
+            pos_r = - s_log.rot.toRotationMatrix().transpose() * s_log.pos;
             Eigen::Vector3d euler_mear = SO3ToEuler(gap_measure.R_cr);
             fout_out << step << " " << euler_cur.transpose() << " " << s_log.pos.transpose() << " " << s_log.vel.transpose() \
             << " " << s_log.bg.transpose() << " " << s_log.ba.transpose()<< " " << s_log.grav.vec.transpose() \
-            << " " << s_log.offset_P_C_B.transpose() << " " << euler_offset.transpose() << " " << euler_mear.transpose() \
-            << " " <<  gap_measure.P_cr.transpose() << std::endl;
+            << " " << s_log.offset_P_C_B.transpose() << " " << euler_offset.transpose() << " " << grav_r.transpose() \
+            << " " << pos_r.transpose() << " " << euler_mear.transpose() << " " <<  gap_measure.P_cr.transpose() << std::endl;
             // fout_out << step << " " << euler_cur.transpose() << " " << s_log.pos.transpose() << " " << s_log.vel.transpose() \
             // << " " << s_log.grav.vec.transpose() << " " << euler_mear.transpose() \
             // << " " <<  gap_measure.P_cr.transpose()<< std::endl;
@@ -217,9 +230,12 @@ int main(int argc, char* argv[])
             state s_log = kf.get_x();
             Eigen::Vector3d euler_cur = SO3ToEuler(s_log.rot);
             Eigen::Vector3d euler_offset = SO3ToEuler(s_log.offset_R_C_B);
+            Eigen::Vector3d grav_r = s_log.rot.toRotationMatrix().transpose() * s_log.grav.vec;
+            Eigen::Vector3d pos_r = - s_log.rot.toRotationMatrix().transpose() * s_log.pos;
             fout_pre << step << " " << euler_cur.transpose() << " " << s_log.pos.transpose() << " " << s_log.vel.transpose() \
             << " " << s_log.bg.transpose() << " " << s_log.ba.transpose()<< " " << s_log.grav.vec.transpose() \
-            << " " << s_log.offset_P_C_B.transpose() << " " << euler_offset.transpose() << std::endl;
+            << " " << s_log.offset_P_C_B.transpose() << " " << euler_offset.transpose() << " " << grav_r.transpose() << " " \
+            << pos_r.transpose() << std::endl;
             // fout_pre << step << " " << euler_cur.transpose() << " " << s_log.pos.transpose() << " " << s_log.vel.transpose() \
             // << " " << s_log.grav.vec.transpose() << std::endl;
             fout_input << step << " " << imu_input.omega.transpose() << " " << imu_input.a.transpose() << std::endl;
@@ -235,6 +251,34 @@ int main(int argc, char* argv[])
             imu_buffer.pop_front();
         }      
         mtx_buffer.unlock(); 
+        double pub_time_now = ros::Time::now().toSec();
+        if (flg_state_init && pub_time_now - pub_time_last > 0.02)
+        {   
+            state s = kf.get_x();
+            pose.header.stamp = ros::Time::now();
+            pose.pose.position.x = s.pos[0];
+            pose.pose.position.y = s.pos[1];
+            pose.pose.position.z = s.pos[2];
+            if (DETECTION_MODE == GAP)
+            {
+                pose.pose.orientation.x = s.rot.x();
+                pose.pose.orientation.y = s.rot.y();
+                pose.pose.orientation.z = s.rot.z();
+                pose.pose.orientation.w = s.rot.w();
+            }
+            pose_pub.publish(pose);
+            grav.header.stamp = ros::Time::now();
+            grav.vector.x = s.grav.vec[0];
+            grav.vector.y = s.grav.vec[1];
+            grav.vector.z = s.grav.vec[2];
+            grav_pub.publish(grav);
+            vel.header.stamp = ros::Time::now();
+            vel.vector.x = s.vel[0];
+            vel.vector.y = s.vel[1];
+            vel.vector.z = s.vel[2];
+            vel_pub.publish(vel);
+            pub_time_last = pub_time_now;
+        }
         rate.sleep();
     }
     ros::spin(); 

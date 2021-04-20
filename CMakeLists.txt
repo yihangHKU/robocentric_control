@@ -13,7 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(OpenCV REQUIRED)
-find_package(realsense2 2.43.0)
+find_package(realsense2 REQUIRED)
 find_package(poly_traj_utils)
 
 catkin_package(
@@ -28,9 +28,12 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
+#add_library(EKF
+#include/IKFoM_toolkit/eskfom/esefom.hpp
+#)
 
-# add_executable(state_estim src/state_estim.cpp)
-# target_link_libraries(state_estim ${catkin_LIBRARIES})
+add_executable(state_estim src/state_estim.cpp)
+target_link_libraries(state_estim ${catkin_LIBRARIES})
 add_executable(vision_detect src/vision_detect.cpp)
 target_link_libraries(vision_detect ${catkin_LIBRARIES} ${realsense2_LIBRARY} ${OpenCV_LIBS})
 add_executable(traj_generate src/traj_generate.cpp)

@@ -7,6 +7,9 @@
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <time.h>
+#include <stdlib.h>
+#include <string.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
@@ -108,19 +111,19 @@ void plane_from_points(vector<Point3f> points)
     // }
     // cout << endl;
 }
-void color_cb(const sensor_msgs::Image::ConstPtr &msg)
-{
-    cv_bridge::CvImagePtr cv_ptr;
-    try
-    {
-       cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-    }
-    catch (cv_bridge::Exception& e)
-    {
-        ROS_ERROR("cv_bridge exception: %s", e.what());
-        return;
-    }
-}
+// void color_cb(const sensor_msgs::Image::ConstPtr &msg)
+// {
+//     cv_bridge::CvImagePtr cv_ptr;
+//     try
+//     {
+//        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+//     }
+//     catch (cv_bridge::Exception& e)
+//     {
+//         ROS_ERROR("cv_bridge exception: %s", e.what());
+//         return;
+//     }
+// }
 int main(int argc, char* argv[])
 {   
     ros::init(argc, argv, "state_estim");
@@ -143,6 +146,12 @@ int main(int argc, char* argv[])
     rs2::frameset frames;
     rs2::align align_to_depth(RS2_STREAM_DEPTH);
     ros::Rate rate(60.0);
+    // time_t t;
+    // tm* local;
+    // char buf[128] = {0};
+    // t = time(NULL);
+    // local = localtime(&t);
+    // strftime(buf, 64, "%Y-%m-%d %H:%M:%S", local);
     fout_vision.open("/home/dji/catkin_ws/debug/mat_vision.txt", std::ios::out);
     Eigen::Matrix<float, 3, 1> last_pub_P{0.0, 0.0, 0.0};
     for(int i = 0; i < 10; i++)

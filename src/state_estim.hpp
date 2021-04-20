@@ -3,6 +3,11 @@
 typedef MTK::SO3<double> SO3;
 typedef MTK::vect<3, double> vect3;
 typedef MTK::S2<double, 98, 10, 3> S2;
+
+#define GAP     0
+#define POINT   1
+#define DETECTION_MODE  GAP
+
 MTK_BUILD_MANIFOLD(state,
     ((S2, grav))
     ((vect3, pos))
