@@ -108,13 +108,16 @@ int main(int argc, char* argv[])
                 init_state.vel[0] = 0;
                 init_state.vel[1] = 0;
                 init_state.vel[2] = 0;
+                init_state.grav.vec[0] = 0;
+                init_state.grav.vec[1] = 0;
+                init_state.grav.vec[2] = 9.8;
                 init_state.offset_R_C_B.x() = 0;
                 init_state.offset_R_C_B.y() = 0;
                 init_state.offset_R_C_B.z() = 0;
                 init_state.offset_R_C_B.w() = 1;
                 init_state.offset_P_C_B[0] = -0.05;
                 init_state.offset_P_C_B[1] = 0;
-                init_state.offset_P_C_B[2] = 0.11;
+                init_state.offset_P_C_B[2] = 0.09;
                 vect3 offset_P_C_B;
                 offset_P_C_B[0] = -0.05;
                 offset_P_C_B[1] = 0;
@@ -126,7 +129,7 @@ int main(int argc, char* argv[])
                 Eigen::Quaternion<double> q_cr(gap_buffer.front()->pose.orientation.w, gap_buffer.front()->pose.orientation.x, gap_buffer.front()->pose.orientation.y, gap_buffer.front()->pose.orientation.z);
                 init_state.rot = init_state.offset_R_C_B.toRotationMatrix().inverse() * q_cr.toRotationMatrix();
                 // init_state.rot = q_cr;                
-                init_state.grav.vec = vect3(init_state.offset_R_C_B.toRotationMatrix().inverse() * q_cr.toRotationMatrix() * init_state.grav.vec);
+                // init_state.grav.vec = vect3(init_state.offset_R_C_B.toRotationMatrix().inverse() * q_cr.toRotationMatrix() * init_state.grav.vec);
                 // init_state.grav.vec = vect3(q_cr.toRotationMatrix() * init_state.grav.vec);                
                 kf.change_x(init_state);
                 kf.change_P(init_P);

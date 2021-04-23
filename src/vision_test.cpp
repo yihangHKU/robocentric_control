@@ -149,7 +149,7 @@ int main()
     // rs2::colorizer color_map;
     cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 60);
     cfg.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16, 60);
-    cfg.enable_stream(RS2_STREAM_INFRARED, 848, 480, RS2_FORMAT_Y8, 60);
+    // cfg.enable_stream(RS2_STREAM_INFRARED, 848, 480, RS2_FORMAT_Y8, 60);
     pipe.start(cfg);
     rs2::frameset frames;
     for(int i = 0; i < 30; i++)
@@ -161,7 +161,7 @@ int main()
     frames = align_to_color.process(frames);
     rs2::frame color_frame = frames.get_color_frame();
     rs2::depth_frame depth_frame = frames.get_depth_frame();
-    rs2::frame ir_frame = frames.first(RS2_STREAM_INFRARED);
+    // rs2::frame ir_frame = frames.first(RS2_STREAM_INFRARED);
     float width = depth_frame.get_width();
     float height = depth_frame.get_height();
     float dist_to_center = depth_frame.get_distance(width/2, height/2);
@@ -176,10 +176,10 @@ int main()
     // }
     // cout << "depth intrinsics ppx" << cameraMatrix[0][2] << endl;
     // rs2::frame colorized_depth = color_map.colorize(depth_frame);
-    Mat color(Size(848, 480), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
+    Mat color(Size(width, height), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
     color_ = color;
-    Mat depth(Size(848, 480), CV_16UC1, (void*)depth_frame.get_data(), Mat::AUTO_STEP);
-    Mat ir(Size(848, 480), CV_8UC1, (void*)ir_frame.get_data(), Mat::AUTO_STEP); 
+    Mat depth(Size(width, height), CV_16UC1, (void*)depth_frame.get_data(), Mat::AUTO_STEP);
+    // Mat ir(Size(848, 480), CV_8UC1, (void*)ir_frame.get_data(), Mat::AUTO_STEP); 
     Mat gray;
     // Mat imgcanny;
     Mat imgcanny_blur;
@@ -251,12 +251,12 @@ int main()
                 for(int k = -range; k < range+1; k++)
                 {
                     float depth_search = depth_frame.get_distance(out_corners[i].x + k, out_corners[i].y + j);
-                    if(depth_search > 0.05 && depth_search < out_corner_depth || out_corner_depth < 0.05)
+                    if(depth_search > 0.20 && (depth_search < out_corner_depth || out_corner_depth < 0.20))
                     {
                         out_corner_depth = depth_search;
                     }
                     depth_search = depth_frame.get_distance(in_corners[i].x + k, in_corners[i].y + j);
-                    if(depth_search > 0.05 && depth_search < in_corner_depth || in_corner_depth < 0.05)
+                    if(depth_search > 0.20 && (depth_search < in_corner_depth || in_corner_depth < 0.20))
                     {
                         in_corner_depth = depth_search;
                     }

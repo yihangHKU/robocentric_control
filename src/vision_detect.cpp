@@ -33,6 +33,7 @@ vector<float> direction_ = {0, 0, 0};
 vector<Eigen::Matrix<float, 3, 1>> P_buffer;
 vector<Eigen::Quaternionf> q_buffer;
 std::ofstream fout_vision;
+std::ofstream fout_depth;
 int verbose = 1;
 int step = 0;
 
@@ -153,6 +154,7 @@ int main(int argc, char* argv[])
     // local = localtime(&t);
     // strftime(buf, 64, "%Y-%m-%d %H:%M:%S", local);
     fout_vision.open("/home/dji/catkin_ws/debug/mat_vision.txt", std::ios::out);
+    fout_depth.open("/home/dji/catkin_ws/debug/mat_depth.txt", std::ios::out);
     Eigen::Matrix<float, 3, 1> last_pub_P{0.0, 0.0, 0.0};
     for(int i = 0; i < 10; i++)
     {
@@ -246,11 +248,17 @@ int main(int argc, char* argv[])
             float in_pixels[4][2];
             vector<Point3f> points_vec(0);
             vector<Point2f> pixels_vec(0);
-            int range = 5;
+            vector<float> out_depth_origin(0);
+            vector<float> out_depth_search(0);
+            vector<float> in_depth_origin(0);
+            vector<float> in_depth_search(0);
+            int range = 8;
             for (int i = 0; i < 4; i++)
             {   
                 float out_corner_depth = depth_frame.get_distance(out_corners[i].x, out_corners[i].y);
                 float in_corner_depth = depth_frame.get_distance(in_corners[i].x, in_corners[i].y);
+                out_depth_origin.push_back(out_corner_depth);
+                in_depth_origin.push_back(in_corner_depth);
                 for (int j = -range; j < range+1; j++)
                 {
                     for(int k = -range; k < range+1; k++)
@@ -258,7 +266,7 @@ int main(int argc, char* argv[])
                         if (0 < out_corners[i].x + k && out_corners[i].x + k < width && 0 < out_corners[i].y + j && out_corners[i].y + j < height)
                         {
                             float depth_search = depth_frame.get_distance(out_corners[i].x + k, out_corners[i].y + j);
-                            if(depth_search > 0.05 && depth_search < out_corner_depth || out_corner_depth < 0.05)
+                            if(depth_search > 0.20 && (depth_search < out_corner_depth || out_corner_depth < 0.20))
                             {
                                 out_corner_depth = depth_search;
                             }
@@ -266,13 +274,15 @@ int main(int argc, char* argv[])
                         if (0 < in_corners[i].x + k && in_corners[i].x + k < width && 0 <in_corners[i].y + j && in_corners[i].y + j < height)
                         {
                             float depth_search_in = depth_frame.get_distance(in_corners[i].x + k, in_corners[i].y + j);
-                            if(depth_search_in > 0.05 && depth_search_in < in_corner_depth || in_corner_depth < 0.05)
+                            if(depth_search_in > 0.20 && (depth_search_in < in_corner_depth || in_corner_depth < 0.20))
                             {
                                 in_corner_depth = depth_search_in;
                             }
                         }
                     }
                 }
+                out_depth_search.push_back(out_corner_depth);
+                in_depth_search.push_back(in_corner_depth);
                 // cout << "corner pixels depth: " << depth_frame.get_distance(out_corners[i].x, out_corners[i].y) << endl;
                 out_pixels[i][0] = out_corners[i].x;
                 out_pixels[i][1] = out_corners[i].y;
@@ -346,7 +356,6 @@ int main(int argc, char* argv[])
                 }
             int out_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
             // cout << "out quadrangle index: " << out_quadr_index_[0] << ' ' << out_quadr_index_[1] << ' ' << out_quadr_index_[2] << ' ' << out_quadr_index_[3] << endl;
-                
             int left_index_i[2] = {10};
             int right_index_i[2] = {10};
             for (int i = 0; i < 4; i++)   // find in quadrangle right and left index
@@ -395,6 +404,10 @@ int main(int argc, char* argv[])
                     right_down_index = right_index_i[0];
                 }
             int in_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
+            fout_depth << step << " " << out_depth_origin[out_quadr_index_[0]] << " " << out_depth_origin[out_quadr_index_[1]] << " " << out_depth_origin[out_quadr_index_[2]] << " " << out_depth_origin[out_quadr_index_[3]] \
+            << " " << in_depth_origin[in_quadr_index_[0]] << " " << in_depth_origin[in_quadr_index_[1]] << " " << in_depth_origin[in_quadr_index_[2]] << " " << in_depth_origin[in_quadr_index_[3]] << endl;
+            fout_depth << step << " " << out_depth_search[out_quadr_index_[0]] << " " << out_depth_search[out_quadr_index_[1]] << " " << out_depth_search[out_quadr_index_[2]] << " " << out_depth_search[out_quadr_index_[3]] \
+            << " " << in_depth_search[in_quadr_index_[0]] << " " << in_depth_search[in_quadr_index_[1]] << " " << in_depth_search[in_quadr_index_[2]] << " " << in_depth_search[in_quadr_index_[3]] << endl << endl;
             // cout << "in quadrangle index: " << in_quadr_index_[0] << ' ' << in_quadr_index_[1] << ' ' << in_quadr_index_[2] << ' ' << in_quadr_index_[3] << endl;
             vector<float> gap_direction_x = {0.,0.,0.};
             vector<float> gap_direction_z = {direction_[0], direction_[1], direction_[2]};
@@ -467,7 +480,7 @@ int main(int argc, char* argv[])
             // std::cout << "q: " << pub_q << std::endl;
             P_buffer.clear();
             q_buffer.clear();
-            if ((pub_P - last_pub_P).norm() < 0.05 || last_pub_P.norm() < 0.01)
+            if ((pub_P - last_pub_P).norm() < 0.2 || last_pub_P.norm() < 0.01)
             {
                 gap_pose.pose.position.x = pub_P[0];
                 gap_pose.pose.position.y = pub_P[1];
