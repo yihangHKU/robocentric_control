@@ -140,8 +140,8 @@ int main(int argc, char* argv[])
     rs2::pipeline pipe;
     rs2::config cfg;
     rs2::colorizer color_map;
-    cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 60);
-    cfg.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16, 60);
+    cfg.enable_stream(RS2_STREAM_COLOR, 960, 540, RS2_FORMAT_BGR8, 60);
+    cfg.enable_stream(RS2_STREAM_DEPTH, 1280, 720, RS2_FORMAT_Z16, 30);
     // cfg.enable_stream(RS2_STREAM_INFRARED, 1280, 720, RS2_FORMAT_Y8, 30);
     pipe.start(cfg);
     rs2::frameset frames;
@@ -153,8 +153,8 @@ int main(int argc, char* argv[])
     // t = time(NULL);
     // local = localtime(&t);
     // strftime(buf, 64, "%Y-%m-%d %H:%M:%S", local);
-    fout_vision.open("/home/dji/catkin_ws/debug/mat_vision.txt", std::ios::out);
-    fout_depth.open("/home/dji/catkin_ws/debug/mat_depth.txt", std::ios::out);
+    fout_vision.open("/home/yihang/catkin_ws/debug/mat_vision.txt", std::ios::out);
+    fout_depth.open("/home/yihang/catkin_ws/debug/mat_depth.txt", std::ios::out);
     Eigen::Matrix<float, 3, 1> last_pub_P{0.0, 0.0, 0.0};
     for(int i = 0; i < 10; i++)
     {
@@ -225,6 +225,7 @@ int main(int argc, char* argv[])
                 // cout << "gap index: " << *it << endl;
             }
         }
+        bool depth_error = false;
         for (list<int>::iterator it = gap_index.begin(); it != gap_index.end(); it++)
         {
             Scalar color = Scalar(100, 100, 100);
@@ -408,6 +409,13 @@ int main(int argc, char* argv[])
             << " " << in_depth_origin[in_quadr_index_[0]] << " " << in_depth_origin[in_quadr_index_[1]] << " " << in_depth_origin[in_quadr_index_[2]] << " " << in_depth_origin[in_quadr_index_[3]] << endl;
             fout_depth << step << " " << out_depth_search[out_quadr_index_[0]] << " " << out_depth_search[out_quadr_index_[1]] << " " << out_depth_search[out_quadr_index_[2]] << " " << out_depth_search[out_quadr_index_[3]] \
             << " " << in_depth_search[in_quadr_index_[0]] << " " << in_depth_search[in_quadr_index_[1]] << " " << in_depth_search[in_quadr_index_[2]] << " " << in_depth_search[in_quadr_index_[3]] << endl << endl;
+            for (int i = 0; i < 4; i++)
+            {
+                if (abs(out_depth_search[out_quadr_index_[i]] - in_depth_search[in_quadr_index_[i]]) > 0.15)
+                {
+                    depth_error = true;
+                }
+            }
             // cout << "in quadrangle index: " << in_quadr_index_[0] << ' ' << in_quadr_index_[1] << ' ' << in_quadr_index_[2] << ' ' << in_quadr_index_[3] << endl;
             vector<float> gap_direction_x = {0.,0.,0.};
             vector<float> gap_direction_z = {direction_[0], direction_[1], direction_[2]};
@@ -460,7 +468,10 @@ int main(int argc, char* argv[])
         }
         img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8, color_);
         img_bridge.toImageMsg(img_msg);
-        color_pub.publish(img_msg);
+        if (!depth_error)
+        {
+            color_pub.publish(img_msg);
+        }
         if (!P_buffer.empty())
         {
             float distance = P_buffer[0].norm();
@@ -480,7 +491,7 @@ int main(int argc, char* argv[])
             // std::cout << "q: " << pub_q << std::endl;
             P_buffer.clear();
             q_buffer.clear();
-            if ((pub_P - last_pub_P).norm() < 0.2 || last_pub_P.norm() < 0.01)
+            if ((pub_P - last_pub_P).norm() < 0.2 || last_pub_P.norm() < 0.01 && !depth_error)
             {
                 gap_pose.pose.position.x = pub_P[0];
                 gap_pose.pose.position.y = pub_P[1];
