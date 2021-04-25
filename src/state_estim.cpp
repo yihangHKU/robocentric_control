@@ -73,7 +73,7 @@ int main(int argc, char* argv[])
     const int measurement_noise_dof = 6;
     int Maximum_iter = 1;
     state::scalar limit[state::DOF] = {0.0001};
-    Eigen::Matrix<state::scalar, process_noise_dof, process_noise_dof> Q = 10. * Eigen::MatrixXd::Identity(process_noise_dof, process_noise_dof);
+    Eigen::Matrix<state::scalar, process_noise_dof, process_noise_dof> Q = 1. * Eigen::MatrixXd::Identity(process_noise_dof, process_noise_dof);
     for (int i = 6; i<process_noise_dof; i++)
     {
         Q(i,i) = 0.0001;
@@ -255,7 +255,7 @@ int main(int argc, char* argv[])
         }      
         mtx_buffer.unlock(); 
         double pub_time_now = ros::Time::now().toSec();
-        if (flg_state_init && pub_time_now - pub_time_last > 0.02)
+        if (flg_state_init && (pub_time_now - pub_time_last >= 0.01))
         {   
             state s = kf.get_x();
             pose.header.stamp = ros::Time::now();

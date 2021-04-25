@@ -127,7 +127,7 @@ void plane_from_points(vector<Point3f> points)
 // }
 int main(int argc, char* argv[])
 {   
-    ros::init(argc, argv, "state_estim");
+    ros::init(argc, argv, "vision_detect");
     ros::NodeHandle nh;
 
     ros::Publisher gap_pose_pub = nh.advertise<geometry_msgs::PoseStamped>
@@ -153,8 +153,8 @@ int main(int argc, char* argv[])
     // t = time(NULL);
     // local = localtime(&t);
     // strftime(buf, 64, "%Y-%m-%d %H:%M:%S", local);
-    fout_vision.open("/home/yihang/catkin_ws/debug/mat_vision.txt", std::ios::out);
-    fout_depth.open("/home/yihang/catkin_ws/debug/mat_depth.txt", std::ios::out);
+    fout_vision.open("../../../debug/mat_vision.txt", std::ios::out);
+    fout_depth.open("../../../debug/mat_depth.txt", std::ios::out);
     Eigen::Matrix<float, 3, 1> last_pub_P{0.0, 0.0, 0.0};
     for(int i = 0; i < 10; i++)
     {
@@ -165,7 +165,10 @@ int main(int argc, char* argv[])
         step++;
         frames = pipe.wait_for_frames();
         rs2::align align_to_color(RS2_STREAM_COLOR);
+        double begin = ros::Time::now().toSec();
         frames = align_to_color.process(frames);
+        double end = ros::Time::now().toSec();
+        std::cout << "align time: " << end - begin << std::endl;
         rs2::frame color_frame = frames.get_color_frame();
         rs2::depth_frame depth_frame = frames.get_depth_frame();
         // rs2::frame ir_frame = frames.first(RS2_STREAM_INFRARED);
@@ -491,7 +494,7 @@ int main(int argc, char* argv[])
             // std::cout << "q: " << pub_q << std::endl;
             P_buffer.clear();
             q_buffer.clear();
-            if ((pub_P - last_pub_P).norm() < 0.2 || last_pub_P.norm() < 0.01 && !depth_error)
+            if (!depth_error)
             {
                 gap_pose.pose.position.x = pub_P[0];
                 gap_pose.pose.position.y = pub_P[1];
