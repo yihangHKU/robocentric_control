@@ -68,8 +68,8 @@ int main(int argc, char* argv[])
     // Mat color 
     while(ros::ok()){ 
         ros::spinOnce();
-        // imshow(OPENCV_WINDOW, color);
-        // waitKey(0);
+        imshow(OPENCV_WINDOW, color);
+        waitKey(0);
         img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8, color);
         img_bridge.toImageMsg(img_msg);
         color_pub.publish(img_msg);
