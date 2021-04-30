@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
     fout_out.open("/home/dji/catkin_ws/debug/mat_out.txt", std::ios::out);
     fout_input.open("/home/dji/catkin_ws/debug/imu.txt", std::ios::out);
     ros::Subscriber imu_sub = nh.subscribe("/mavros/imu/data_raw", 1000, imu_cb);
-    ros::Subscriber gap_sub = nh.subscribe("/camera/gap_pose", 1000, gap_cb);
+    ros::Subscriber gap_sub = nh.subscribe("/robocentric/camera/gap_pose", 1000, gap_cb);
     ros::Publisher pose_pub = nh.advertise<geometry_msgs::PoseStamped> ("robocentric/pose", 100);
     ros::Publisher grav_pub = nh.advertise<geometry_msgs::Vector3Stamped> ("robocentric/gravity", 100);
     ros::Publisher vel_pub = nh.advertise<geometry_msgs::Vector3Stamped> ("robocentric/velocity", 100);
@@ -163,7 +163,7 @@ int main(int argc, char* argv[])
         {
             dt = gap_buffer.front()->header.stamp.toSec() - last_predict_time;
             log_dt.push_back(dt);
-            std::cout << "dt1: " << dt << std::endl;
+            // std::cout << "dt1: " << dt << std::endl;
             kf.predict(dt, Q, imu_input);
             // std::cout << "predict state: " << kf.get_x() << std::endl;
             // std::cout << "P prior: ";
@@ -172,7 +172,7 @@ int main(int argc, char* argv[])
             //     std::cout << " " << kf.get_P()(i,i);
             //     P_diag(i) = kf.get_P()(i,i);
             // }
-            std::cout << std::endl;
+            // std::cout << std::endl;
             step += dt;
             state s_log = kf.get_x();
             Eigen::Vector3d euler_cur = SO3ToEuler(s_log.rot);

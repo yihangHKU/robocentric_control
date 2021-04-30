@@ -163,9 +163,9 @@ int main(int argc, char* argv[])
     ros::Subscriber depth_sub = nh.subscribe("/camera/aligned_depth_to_color/image_raw", 1000, depth_cb);
     ros::Subscriber info_sub = nh.subscribe("/camera/aligned_depth_to_color/camera_info", 1000, info_cb);
     ros::Publisher gap_pose_pub = nh.advertise<geometry_msgs::PoseStamped>
-            ("camera/gap_pose", 100);
+            ("/robocentric/camera/gap_pose", 100);
     ros::Publisher color_pub = nh.advertise<sensor_msgs::Image>
-            ("camera/color_raw", 100);
+            ("/robocentric/camera/color_raw", 100);
     sensor_msgs::Image img_msg;
     std_msgs::Header header;
     cv_bridge::CvImage img_bridge;
@@ -178,15 +178,15 @@ int main(int argc, char* argv[])
     // pipe.start(cfg);
     // rs2::frameset frames;
     // rs2::align align_to_depth(RS2_STREAM_DEPTH);
-    ros::Rate rate(60.0);
+    ros::Rate rate(500.0);
     // time_t t;
     // tm* local;
     // char buf[128] = {0};
     // t = time(NULL);
     // local = localtime(&t);
     // strftime(buf, 64, "%Y-%m-%d %H:%M:%S", local);
-    fout_vision.open("../../../debug/mat_vision.txt", std::ios::out);
-    fout_depth.open("../../../debug/mat_depth.txt", std::ios::out);
+    fout_vision.open("/home/dji/catkin_ws/debug/mat_vision.txt", std::ios::out);
+    fout_depth.open("/home/dji/catkin_ws/debug/mat_depth.txt", std::ios::out);
     Eigen::Matrix<float, 3, 1> last_pub_P{0.0, 0.0, 0.0};
     for(int i = 0; i < 10; i++)
     {
@@ -464,6 +464,7 @@ int main(int argc, char* argv[])
                     if (abs(out_depth_search[out_quadr_index_[i]] - in_depth_search[in_quadr_index_[i]]) > 0.15)
                     {
                         depth_error = true;
+                        std::cout << "depth_error" << std::endl;
                     }
                 }
                 // cout << "in quadrangle index: " << in_quadr_index_[0] << ' ' << in_quadr_index_[1] << ' ' << in_quadr_index_[2] << ' ' << in_quadr_index_[3] << endl;

@@ -481,7 +481,6 @@ public:
 			}
 			Matrix<scalar_type, l, 1> innovation; 
 			z.boxminus(innovation, h(x_, valid));
-			std::cout << "innovation: " << innovation << std::endl;
 			cov K_x = K_ * h_x_;
 			Matrix<scalar_type, n, 1> dx_ = K_ * innovation + (K_x  - Matrix<scalar_type, n, n>::Identity()) * dx_new;
 			state x_before = x_;
