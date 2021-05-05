@@ -31,8 +31,8 @@ Mat color(Size(640, 480), CV_8UC3);
 Mat depth(Size(640, 480), CV_32FC1);
 static const std::string OPENCV_WINDOW = "Image window";
 vector<Point2f> corners_;
-float centroid_[3] = {0, 0, 0};
-vector<float> direction_ = {0, 0, 0};
+// float centroid_[3] = {0, 0, 0};
+// vector<float> direction_ = {0, 0, 0};
 vector<Eigen::Matrix<float, 3, 1>> P_buffer;
 vector<Eigen::Quaternionf> q_buffer;
 std::ofstream fout_vision;
@@ -48,77 +48,8 @@ cv_bridge::CvImagePtr cv_ptr_color;
 bool color_update = false;
 cv_bridge::CvImagePtr cv_ptr_depth;
 bool depth_update = false;
+bool info_define = false;
 
-void plane_from_points(vector<Point3f> points)
-{   
-    vector<float> sum = {0.0, 0.0, 0.0};
-    for (int i = 0; i < points.size(); i++)
-    {   
-        sum[0] += points[i].x;
-        sum[1] += points[i].y;
-        sum[2] += points[i].z;
-    }
-    for (int i = 0; i < 3; i++)
-    {
-        centroid_[i] = sum[i] * (1.0 / int(points.size()));
-    }
-    float xx = 0.0;
-    float xy = 0.0;
-    float xz = 0.0;
-    float yy = 0.0;
-    float yz = 0.0;
-    float zz = 0.0;
-    for (int i =0; i < points.size(); i++)
-    {
-        vector<float> r = {points[i].x - centroid_[0], points[i].y - centroid_[1], points[i].z - centroid_[2]};
-        xx += r[0] * r[0];
-        xy += r[0] * r[1];
-        xz += r[0] * r[2];
-        yy += r[1] * r[1];
-        yz += r[1] * r[2];
-        zz += r[2] * r[2];
-    }
-    
-    float det_x = yy * zz - yz * yz;
-    float det_y = xx * zz - xz * xz;
-    float det_z = xx * yy - xy * xy;
-    float det_max = max(max(det_x, det_y), det_z);
-    vector<float> direction;
-    if (det_max == det_x)
-    {
-        direction_[0] = det_x;
-        direction_[1] = xz * yz - xy * zz;
-        direction_[2] = xy * yz - xz * yy;
-    }
-    else if (det_max == det_y)
-    {
-        direction_[0] = xz * yz - xy * zz;
-        direction_[1] = det_y;
-        direction_[2] = xy * xz - yz * xx;
-    }
-    else
-    {
-        direction_[0] = xy * yz - xz * yy;
-        direction_[1] = xy * xz - yz * xx;
-        direction_[2] = det_z;
-    }
-    float length = norm(direction_);
-    direction_[0] = direction_[0] / length;
-    direction_[1] = direction_[1] / length;
-    direction_[2] = direction_[2] / length;
-    // cout << "plane centroid: ";
-    // for (int i = 0; i < 3; i++)
-    // {
-    //     cout << " " << centroid_[i];
-    // }
-    // cout << endl;
-    // cout << "plane norm direction: ";
-    // for (int i = 0; i < 3; i++)
-    // {
-    //     cout << " " << direction_[i];
-    // }
-    // cout << endl;
-}
 
 void color_cb(const sensor_msgs::Image::ConstPtr &msg)
 {
@@ -178,7 +109,7 @@ int main(int argc, char* argv[])
     // pipe.start(cfg);
     // rs2::frameset frames;
     // rs2::align align_to_depth(RS2_STREAM_DEPTH);
-    ros::Rate rate(500.0);
+    ros::Rate rate(100.0);
     // time_t t;
     // tm* local;
     // char buf[128] = {0};
@@ -205,15 +136,19 @@ int main(int argc, char* argv[])
         // rs2::frame color_frame = frames.get_color_frame();
         // rs2::depth_frame depth_frame = frames.get_depth_frame();
         // rs2::frame ir_frame = frames.first(RS2_STREAM_INFRARED);
-        int width = camera_info.width;
-        int height = camera_info.height;
+        int width = 640;
+        int height = 480;
         // rs2_intrinsics depth_intrins = rs2::video_stream_profile(depth_frame.get_profile()).get_intrinsics();
         // rs2_intrinsics color_intrins = rs2::video_stream_profile(color_frame.get_profile()).get_intrinsics();
         // cv::Matx33f cameraMatrix = {depth_intrins.fx, 0., depth_intrins.ppx, 0, depth_intrins.fy, depth_intrins.ppy, 0, 0 ,0};
         // vector<float> distCoeffs = {depth_intrins.coeffs[0], depth_intrins.coeffs[1], depth_intrins.coeffs[2], depth_intrins.coeffs[3], depth_intrins.coeffs[4]};
         rs2_intrinsics depth_intrins;
-        cv::Matx33d cameraMatrix = {camera_info.K[0], 0., camera_info.K[2], 0., camera_info.K[4], camera_info.K[5], 0., 0., 1.};
-        vector<double> distCoeffs = camera_info.D;
+        vector<double> distCoeffs;
+        
+            // cv::Matx33d cameraMatrix = {camera_info.K[0], 0., camera_info.K[2], 0., camera_info.K[4], camera_info.K[5], 0., 0., 1.}; 
+        width = camera_info.width;
+        height = camera_info.height;
+        distCoeffs = camera_info.D;
         for (int i = 0; i < distCoeffs.size(); i++)
         {
             depth_intrins.coeffs[i] = (float)distCoeffs[i];
@@ -225,6 +160,7 @@ int main(int argc, char* argv[])
         depth_intrins.ppx = camera_info.K[2];
         depth_intrins.ppy = camera_info.K[5];
         depth_intrins.model = RS2_DISTORTION_BROWN_CONRADY;
+        info_define = true;
         // for (int i = 0; i<5; i++)
         // {    
         //     cout << "depth distcoeffs: " << distCoeffs[i] << endl;
@@ -304,6 +240,8 @@ int main(int argc, char* argv[])
                 int range = 8;
                 for (int i = 0; i < 4; i++)
                 {   
+                    std::cout << "out corner: " << out_corners[i].x << " " << out_corners[i].y << std::endl;
+                    std::cout << "in corner: " << in_corners[i].x << " " << in_corners[i].y << std::endl;
                     float out_corner_depth = depth.at<float>(out_corners[i].x, out_corners[i].y);
                     float in_corner_depth = depth.at<float>(in_corners[i].x, in_corners[i].y);
                     out_depth_origin.push_back(out_corner_depth);
@@ -346,9 +284,12 @@ int main(int argc, char* argv[])
                     pixels_vec.push_back(Point2f(out_pixels[i][0], out_pixels[i][1]));
                     pixels_vec.push_back(Point2f(in_pixels[i][0], in_pixels[i][1]));
                 }
-                plane_from_points(points_vec);
+                vector<float> direction_ = {0, 0, 0};
+                vector<float> centroid = {0, 0, 0};
+                plane_from_points(points_vec, direction_, centroid);
                 cout << "publish time: " << ros::Time::now() << endl;
                 float centroid_pixel[2] = {0, 0};
+                float centroid_[3] = {centroid[0], centroid[1], centroid[2]};
                 rs2_project_point_to_pixel(centroid_pixel, &depth_intrins, centroid_);
                 // cout << "centroid pixel: " << centroid_pixel[0] << " " << centroid_pixel[1] << endl;
                 vector<Point2f> centroid_pixel_(1);

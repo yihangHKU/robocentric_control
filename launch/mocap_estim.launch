@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<launch>
+  <node  pkg="robocentric_control" type="mocap_detect" name="mocap_detect_node" output="screen" />
+  <node  pkg="robocentric control" type="state_estim.cpp" name="state_estim_node" output="screen" />
+
+</launch>

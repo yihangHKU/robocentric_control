@@ -221,7 +221,7 @@ int main(int argc, char* argv[])
         {
             dt = imu_buffer.front()->header.stamp.toSec() - last_predict_time;
             log_dt.push_back(dt);
-            std::cout << "dt2: " << dt << std::endl;
+            // std::cout << "dt2: " << dt << std::endl;
             imu_input.a[0] = imu_buffer.front()->linear_acceleration.x;
             imu_input.a[1] = - imu_buffer.front()->linear_acceleration.y;
             imu_input.a[2] = - imu_buffer.front()->linear_acceleration.z;
