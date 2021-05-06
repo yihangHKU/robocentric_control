@@ -185,6 +185,15 @@ int main()
     Mat imgcanny_blur;
     cvtColor( color, gray, COLOR_BGR2GRAY );
     gray_ = gray;
+    vector<Vec3f> circles;
+    HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 1, gray.rows/4, 50, 10);
+    cout << "circle size: " << circles.size() << endl;
+    for (size_t i = 0; i < circles.size(); i++)
+    {
+        Point2f center(circles[i][0],circles[i][1]);
+        float radius = circles[i][2];
+        circle(imgcanny_blur, center, radius, Scalar(255, 0, 0), 3, 8, 0);
+    }
     blur( gray, gray, Size(3,3) );
     Canny(gray, imgcanny_blur, 100, 200, 3, true);
     namedWindow("imgCanny blur", CV_WINDOW_AUTOSIZE);
@@ -204,6 +213,17 @@ int main()
             // Scalar color = Scalar(100, 100, 100);
             // drawContours( imgcontour, contours, (int)i, color, 1, LINE_8, hierarchy, 0);
             cout << "contour index: " << i << " length: " << length_contour << "hierarchy: " << hierarchy[i] << endl;
+        }
+        if (contours[i].size() >= 10)
+        {   
+            Scalar color = Scalar(100, 100, 100);
+            std::cout << "contours size: "<< contours[i].size() <<std::endl;
+            drawContours(imgcontour, contours, i, color, 1, LINE_8, hierarchy, 0);
+            Point2f center;
+            float radius;
+            minEnclosingCircle(contours[i], center, radius);
+            cout<< "center: " << center.x << " "<<center.y << " radius:" << radius << endl;
+            circle(imgcontour, center, cvRound(radius), Scalar(0,255,0), 1, LINE_AA);
         }
     }
     list<int> gap_index;
