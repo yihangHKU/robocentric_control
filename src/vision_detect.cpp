@@ -1,12 +1,12 @@
 #include <ros/ros.h>
 #include <iostream>
 #include <opencv2/opencv.hpp>
-#include <librealsense2/rs.hpp>
-#include <librealsense2/rsutil.h>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PoseArray.h>
+#include <geometry_msgs/Pose.h>
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +31,7 @@ vector<Point2f> corners_;
 float centroid_[3] = {0, 0, 0};
 vector<float> direction_ = {0, 0, 0};
 vector<Eigen::Matrix<float, 3, 1>> P_buffer;
+vector<Eigen::Matrix<float, 3, 1>> P2_buffer;
 vector<Eigen::Quaternionf> q_buffer;
 std::ofstream fout_vision;
 std::ofstream fout_depth;
@@ -40,7 +41,8 @@ int step = 0;
 sensor_msgs::Image color_frame;
 sensor_msgs::Image depth_frame;
 sensor_msgs::CameraInfo color_info;
-geometry_msgs::PoseStamped gap_pose;
+geometry_msgs::PoseArray gap_array;
+geometry_msgs::Pose gap_pose;
 
 void plane_from_points(vector<Point3f> points)
 {   
@@ -130,10 +132,10 @@ int main(int argc, char* argv[])
     ros::init(argc, argv, "vision_detect");
     ros::NodeHandle nh;
 
-    ros::Publisher gap_pose_pub = nh.advertise<geometry_msgs::PoseStamped>
-            ("camera/gap_pose", 100);
+    ros::Publisher gap_pose_pub = nh.advertise<geometry_msgs::PoseArray>
+            ("/robocentric/camera/gap_pose2", 100);
     ros::Publisher color_pub = nh.advertise<sensor_msgs::Image>
-            ("camera/color_raw", 100);
+            ("/robocentric/camera/color_raw", 100);
     sensor_msgs::Image img_msg;
     std_msgs::Header header;
     cv_bridge::CvImage img_bridge;
@@ -154,8 +156,8 @@ int main(int argc, char* argv[])
     // t = time(NULL);
     // local = localtime(&t);
     // strftime(buf, 64, "%Y-%m-%d %H:%M:%S", local);
-    fout_vision.open("../../../debug/mat_vision.txt", std::ios::out);
-    fout_depth.open("../../../debug/mat_depth.txt", std::ios::out);
+    fout_vision.open("/home/dji/catkin_ws/debug/mat_vision.txt", std::ios::out);
+    fout_depth.open("/home/dji/catkin_ws/debug/mat_depth.txt", std::ios::out);
     Eigen::Matrix<float, 3, 1> last_pub_P{0.0, 0.0, 0.0};
     for(int i = 0; i < 10; i++)
     {
@@ -163,19 +165,19 @@ int main(int argc, char* argv[])
         // ros::spinOnce();
     }
     // float depth_scale = get_depth_scale(profile.get_device());
-    float depth_clipping_distance = 2.0;
+    float depth_clipping_distance = 5.0;
     // std::cout << "depth_scale: " << depth_scale << std::endl;
     rs2::align align_to_color(RS2_STREAM_COLOR);
     while(ros::ok()){ 
         step++;
         frames = pipe.wait_for_frames();
-        double begin = ros::Time::now().toSec();
+        // double begin = ros::Time::now().toSec();
         frames = align_to_color.process(frames);
-        double end = ros::Time::now().toSec();
-        std::cout << "align time: " << end - begin << std::endl;
+        // double end = ros::Time::now().toSec();
+        // std::cout << "align time: " << end - begin << std::endl;
         rs2::video_frame color_frame = frames.get_color_frame();
         rs2::depth_frame depth_frame = frames.get_depth_frame();
-        remove_background(color_frame, depth_frame, 0.001, depth_clipping_distance);
+        // remove_background(color_frame, depth_frame, 0.001, depth_clipping_distance);
         // rs2::frame ir_frame = frames.first(RS2_STREAM_INFRARED);
         int width = depth_frame.get_width();
         int height = depth_frame.get_height();
@@ -424,6 +426,8 @@ int main(int argc, char* argv[])
                     depth_error = true;
                 }
             }
+            float Point2[3];
+            rs2_deproject_pixel_to_point(Point2, &depth_intrins, in_pixels[in_quadr_index_[1]], in_depth_search[in_quadr_index_[1]]);
             // cout << "in quadrangle index: " << in_quadr_index_[0] << ' ' << in_quadr_index_[1] << ' ' << in_quadr_index_[2] << ' ' << in_quadr_index_[3] << endl;
             vector<float> gap_direction_x = {0.,0.,0.};
             vector<float> gap_direction_z = {direction_[0], direction_[1], direction_[2]};
@@ -451,6 +455,8 @@ int main(int argc, char* argv[])
             // }
             // cout << endl;
             vector<float> gap_center = {centroid_[0], centroid_[1], centroid_[2]};
+            vector<float> point2_vector = {Point2[0], Point2[1], Point2[2]};
+            point2_vector = RDF_2_FRD(point2_vector);
             gap_center = RDF_2_FRD(gap_center);
             gap_direction_x = RDF_2_FRD(gap_direction_x);
             gap_direction_y = RDF_2_FRD(gap_direction_y);
@@ -470,8 +476,11 @@ int main(int argc, char* argv[])
                 gap_direction_z[2], gap_direction_x[2], gap_direction_y[2];
             Eigen::Matrix<float, 3, 1> P;
             P << gap_center[0], gap_center[1], gap_center[2];
+            Eigen::Matrix<float, 3, 1> P2;
+            P2 << point2_vector[0], point2_vector[1], point2_vector[2];
             Eigen::Quaternionf q(R);
             P_buffer.push_back(P);
+            P2_buffer.push_back(P2);
             q_buffer.push_back(q);
         }
         img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8, color_);
@@ -494,22 +503,30 @@ int main(int argc, char* argv[])
             }
             std::cout << "gap index: " << index << std::endl;
             Eigen::Matrix<float, 3, 1> pub_P = P_buffer[index];
+            Eigen::Matrix<float, 3, 1> pub_P2 = P2_buffer[index];
             Eigen::Quaternionf pub_q = q_buffer[index];
             std::cout << "P: " << pub_P << std::endl;
             // std::cout << "q: " << pub_q << std::endl;
             P_buffer.clear();
+            P2_buffer.clear();
             q_buffer.clear();
             if (!depth_error)
             {
-                gap_pose.pose.position.x = pub_P[0];
-                gap_pose.pose.position.y = pub_P[1];
-                gap_pose.pose.position.z = pub_P[2];
-                gap_pose.pose.orientation.x = pub_q.x();
-                gap_pose.pose.orientation.y = pub_q.y();
-                gap_pose.pose.orientation.z = pub_q.z();
-                gap_pose.pose.orientation.w = pub_q.w();
-                gap_pose.header.stamp = ros::Time::now();
-                gap_pose_pub.publish(gap_pose); 
+                gap_pose.position.x = pub_P[0];
+                gap_pose.position.y = pub_P[1];
+                gap_pose.position.z = pub_P[2];
+                gap_pose.orientation.x = pub_q.x();
+                gap_pose.orientation.y = pub_q.y();
+                gap_pose.orientation.z = pub_q.z();
+                gap_pose.orientation.w = pub_q.w();
+                gap_array.poses.push_back(gap_pose);
+                gap_pose.position.x = pub_P2[0];
+                gap_pose.position.y = pub_P2[1];
+                gap_pose.position.z = pub_P2[2];
+                gap_array.poses.push_back(gap_pose);
+                gap_array.header.stamp = ros::Time::now();
+                gap_pose_pub.publish(gap_array); 
+                gap_array.poses.clear();
             } 
             last_pub_P = pub_P;
         }

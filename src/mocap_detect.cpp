@@ -1,6 +1,8 @@
 #include <ros/ros.h>
 #include <iostream>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PoseArray.h>
+#include <geometry_msgs/PointStamped.h>
 #include <sensor_msgs/Imu.h>
 #include "vision_detect.hpp"
 #include <cv_bridge/cv_bridge.h>
@@ -9,7 +11,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
-geometry_msgs::PoseStamped gap_pose;
+geometry_msgs::PoseArray gap_array;
 geometry_msgs::PoseStamped aircraft_pose;
 geometry_msgs::PoseStamped corner1;
 geometry_msgs::PoseStamped corner2;
@@ -59,7 +61,7 @@ int main(int argc, char* argv[])
     ros::init(argc, argv, "mocap_detect");
     ros::NodeHandle nh;
     
-    ros::Publisher gap_pose_pub = nh.advertise<geometry_msgs::PoseStamped>
+    ros::Publisher gap_pose_pub = nh.advertise<geometry_msgs::PoseArray>
             ("/robocentric/camera/gap_pose", 100);
     ros::Publisher vision_pose_pub = nh.advertise<geometry_msgs::PoseStamped>
             ("/mavros/vision_pose/pose", 100);
@@ -69,7 +71,7 @@ int main(int argc, char* argv[])
     ros::Subscriber corner4_sub = nh.subscribe("/corner4/viconros/mocap/pos", 1000, corner4_cb);
     ros::Subscriber aircraft_sub = nh.subscribe("/aircraft/viconros/mocap/pos", 1000, aircraft_cb);
     ros::Subscriber aircraft_q_sub = nh.subscribe("/mavros/imu/data", 1000, aircraft_q_cb);
-    ros::Rate rate(30.0);
+    ros::Rate rate(50.0);
     for(int i = 0; i < 10; i++)
     {
         ros::spinOnce();
@@ -114,9 +116,11 @@ int main(int argc, char* argv[])
         Eigen::Matrix<float, 3, 3> R_b_r = R_aircraft.transpose() * R_gap;
         // std::cout << "R_b_r: " << R_b_r.block(0,0,3,1) << std::endl;
 	    Eigen::Matrix<float, 3, 1> P_b_r = {centroid[0] - (float)aircraft_pose.pose.position.x, centroid[1] - (float)aircraft_pose.pose.position.y, centroid[2] - (float)aircraft_pose.pose.position.z};
+        Eigen::Matrix<float, 3, 1> P2_b_r = {(float)corner2.pose.position.x - (float)aircraft_pose.pose.position.x, (float)corner2.pose.position.y - (float)aircraft_pose.pose.position.y, (float)corner2.pose.position.z - (float)aircraft_pose.pose.position.z};
          //std::cout << "P_b_r " << P_b_r << std::endl;
         //std::cout << "R_aircraft: " << R_aircraft << std::endl;
         P_b_r = R_aircraft.transpose() * P_b_r;
+        P2_b_r = R_aircraft.transpose() * P2_b_r;
         //std::cout << "R_b_r " << R_b_r << std::endl;
         R_aircraft.block(0,0,3,1) = ENU_2_NED(R_aircraft.block(0,0,3,1));
         R_aircraft.block(0,1,3,1) = -ENU_2_NED(R_aircraft.block(0,1,3,1));
@@ -126,19 +130,26 @@ int main(int argc, char* argv[])
 	    R_gap.block(0,2,3,1) = -ENU_2_NED(R_gap.block(0,2,3,1));
 	    R_b_r = R_aircraft.transpose() * R_gap;	    
 	    P_b_r = FLU_2_FRD(P_b_r);
+        P2_b_r = FLU_2_FRD(P2_b_r);
         Eigen::Quaternionf q_b_r(R_b_r);
-        geometry_msgs::PoseStamped gap_pose;
-        gap_pose.header.stamp = ros::Time::now();
-        gap_pose.header.frame_id = "FRD";
-        gap_pose.pose.position.x = P_b_r[0];
-        gap_pose.pose.position.y = P_b_r[1];
-        gap_pose.pose.position.z = P_b_r[2];
-        gap_pose.pose.orientation.x = q_b_r.x();
-        gap_pose.pose.orientation.y = q_b_r.y();
-        gap_pose.pose.orientation.z = q_b_r.z();
-        gap_pose.pose.orientation.w = q_b_r.w();
-        gap_pose_pub.publish(gap_pose);
+        geometry_msgs::Pose gap_pose;
+        gap_array.header.stamp = ros::Time::now();
+        gap_array.header.frame_id = "FRD";
+        gap_pose.position.x = P_b_r[0];
+        gap_pose.position.y = P_b_r[1];
+        gap_pose.position.z = P_b_r[2];
+        gap_pose.orientation.x = q_b_r.x();
+        gap_pose.orientation.y = q_b_r.y();
+        gap_pose.orientation.z = q_b_r.z();
+        gap_pose.orientation.w = q_b_r.w();
+        gap_array.poses.push_back(gap_pose);
+        gap_pose.position.x = P2_b_r[0];
+        gap_pose.position.y = P2_b_r[1];
+        gap_pose.position.z = P2_b_r[2];
+        gap_array.poses.push_back(gap_pose);
+        gap_pose_pub.publish(gap_array);
         vision_pose_pub.publish(aircraft_pose);
+        gap_array.poses.clear();
         rate.sleep();
     }
     return 0;

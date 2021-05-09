@@ -1,33 +1,37 @@
 #include <../include/IKFoM_toolkit/esekfom/esekfom.hpp>
+#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PoseArray.h>
+#include <geometry_msgs/PointStamped.h>
 
 typedef MTK::SO3<double> SO3;
 typedef MTK::vect<3, double> vect3;
 typedef MTK::S2<double, 98, 10, 3> S2;
 
-#define GAP     0
-#define POINT   1
+#define GAP      0
+#define HOVER    1
+#define HOVER2   2
 #define DETECTION_MODE  GAP
 
 MTK_BUILD_MANIFOLD(state,
-    ((S2, grav))
-    ((vect3, pos))
-    ((SO3, rot))
-    ((vect3, vel))
-    ((vect3, bg))
-    ((vect3, ba))
-    ((SO3, offset_R_C_B))
-    ((vect3, offset_P_C_B))
-);
+            ((S2, grav))
+            ((vect3, pos))
+            ((SO3, rot))
+            ((vect3, vel))
+            ((vect3, bg))
+            ((vect3, ba))
+            ((SO3, offset_R_C_B))
+            ((vect3, offset_P_C_B))
+            );
 
 MTK_BUILD_MANIFOLD(input,
-    ((vect3, a))
-    ((vect3, omega))
-);
+            ((vect3, a))
+            ((vect3, omega))
+            );
 
 MTK_BUILD_MANIFOLD(measurement,
-    ((SO3, R_cr))
-    ((vect3, P_cr))
-);
+            ((SO3, R_cr))
+            ((vect3, P_cr))
+            );
 
 vect3 SO3ToEuler(const SO3 &orient) 
 {
@@ -168,6 +172,61 @@ Eigen::Matrix<double, 6, 6> dh_dv(state &s, bool &valid){
     return ph_pv; 
 }
 
+void predict_log(std::ofstream &fout_pre, state &s_log, double &step)
+{
+    Eigen::Vector3d euler_cur = SO3ToEuler(s_log.rot);
+    Eigen::Vector3d euler_offset = SO3ToEuler(s_log.offset_R_C_B);
+    Eigen::Vector3d grav_r = s_log.rot.toRotationMatrix().transpose() * s_log.grav.vec;
+    Eigen::Vector3d pos_r = - s_log.rot.toRotationMatrix().transpose() * s_log.pos;
+    fout_pre << step << " " << euler_cur.transpose() << " " << s_log.pos.transpose() << " " << s_log.vel.transpose() \
+    << " " << s_log.bg.transpose() << " " << s_log.ba.transpose()<< " " << s_log.grav.vec.transpose() \
+    << " " << s_log.offset_P_C_B.transpose() << " " << euler_offset.transpose() << " " << grav_r.transpose() <<  " " \
+    << pos_r.transpose() << std::endl;
+}
+
+void update_log(std::ofstream &fout_out, state &s_log, measurement &measure, double &step)
+{
+    Eigen::Vector3d euler_cur = SO3ToEuler(s_log.rot);
+    Eigen::Vector3d euler_offset = SO3ToEuler(s_log.offset_R_C_B);
+    Eigen::Vector3d grav_r = s_log.rot.toRotationMatrix().transpose() * s_log.grav.vec;
+    Eigen::Vector3d pos_r = - s_log.rot.toRotationMatrix().transpose() * s_log.pos;
+    Eigen::Vector3d euler_mear = SO3ToEuler(measure.R_cr);
+    fout_out << step << " " << euler_cur.transpose() << " " << s_log.pos.transpose() << " " << s_log.vel.transpose() \
+    << " " << s_log.bg.transpose() << " " << s_log.ba.transpose()<< " " << s_log.grav.vec.transpose() \
+    << " " << s_log.offset_P_C_B.transpose() << " " << euler_offset.transpose() << " " << grav_r.transpose() \
+    << " " << pos_r.transpose() << " " << euler_mear.transpose() << " " <<  measure.P_cr.transpose() << std::endl;
+}
+
+void measure_receive(measurement &measure, geometry_msgs::PoseArray::ConstPtr &gap_measure)
+{
+    measure.R_cr.x() = gap_measure->poses[0].orientation.x;
+    measure.R_cr.y() = gap_measure->poses[0].orientation.y;
+    measure.R_cr.z() = gap_measure->poses[0].orientation.z;
+    measure.R_cr.w() = gap_measure->poses[0].orientation.w;
+    measure.P_cr[0] = gap_measure->poses[0].position.x;
+    measure.P_cr[1] = gap_measure->poses[0].position.y;
+    measure.P_cr[2] = gap_measure->poses[0].position.z;
+}
+
+void state_init(state &init_state, geometry_msgs::PoseArray::ConstPtr &gap_measure)
+{
+    Eigen::Matrix<double, 3, 1> p_c_r;
+    p_c_r << gap_measure->poses[0].position.x, gap_measure->poses[0].position.y, gap_measure->poses[0].position.z;
+    init_state.pos = init_state.offset_R_C_B.toRotationMatrix().inverse() * (p_c_r - init_state.offset_P_C_B);
+    Eigen::Quaternion<double> q_cr(gap_measure->poses[0].orientation.w, gap_measure->poses[0].orientation.x, gap_measure->poses[0].orientation.y, gap_measure->poses[0].orientation.z);
+    init_state.rot = init_state.offset_R_C_B.toRotationMatrix().inverse() * q_cr.toRotationMatrix();
+}
+
+void topic_pub(state &s, geometry_msgs::PoseStamped &pose, geometry_msgs::PointStamped &point2)
+{
+    pose.pose.position.x = s.pos[0];
+    pose.pose.position.y = s.pos[1];
+    pose.pose.position.z = s.pos[2];
+    pose.pose.orientation.x = s.rot.x();
+    pose.pose.orientation.y = s.rot.y();
+    pose.pose.orientation.z = s.rot.z();
+    pose.pose.orientation.w = s.rot.w();
+}
 
 //// no bias no extrinx
 
