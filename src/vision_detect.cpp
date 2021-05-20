@@ -142,14 +142,14 @@ int main(int argc, char* argv[])
     rs2::pipeline pipe;
     rs2::config cfg;
     rs2::colorizer color_map;
-    cfg.enable_stream(RS2_STREAM_COLOR, 640, 360, RS2_FORMAT_BGR8, 90);
+    cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 60);
     cfg.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16, 90);
     cfg.enable_stream(RS2_STREAM_INFRARED, 848, 480, RS2_FORMAT_Y8, 90);
     pipe.start(cfg);
     // rs2::pipeline_profile profile = pipe.start();
     rs2::frameset frames;
     rs2::align align_to_depth(RS2_STREAM_DEPTH);
-    ros::Rate rate(200.0);
+    ros::Rate rate(50.0);
     // time_t t;
     // tm* local;
     // char buf[128] = {0};
@@ -204,7 +204,7 @@ int main(int argc, char* argv[])
         Mat imgcanny_blur;
         cvtColor( color, gray, COLOR_BGR2GRAY );
         gray_ = gray;
-        blur( gray, gray, Size(3,3) );
+        blur( gray, gray, Size(6,6) );
         Canny(gray, imgcanny_blur, 100, 200, 3, true);
         // namedWindow("imgCanny blur", CV_WINDOW_AUTOSIZE);
         // imshow("imgCanny blur", imgcanny_blur);

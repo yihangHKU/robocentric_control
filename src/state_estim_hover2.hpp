@@ -5,7 +5,7 @@
 
 typedef MTK::SO3<double> SO3;
 typedef MTK::vect<3, double> vect3;
-typedef MTK::S2<double, 98, 10, 3> S2;
+typedef MTK::S2<double, 981, 100, 3> S2;
 
 MTK_BUILD_MANIFOLD(state,
             ((S2, grav))
