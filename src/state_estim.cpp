@@ -79,7 +79,7 @@ int main(int argc, char* argv[])
     Eigen::Matrix<state::scalar, process_noise_dof, process_noise_dof> Q = 1. * Eigen::MatrixXd::Identity(process_noise_dof, process_noise_dof);
     for (int i = 6; i<process_noise_dof; i++)
     {
-        Q(i,i) = 0.0001;
+        Q(i,i) = 0.001;
     }
     Eigen::Matrix<state::scalar, measurement::DOF, measurement::DOF> R = 0.01 * Eigen::MatrixXd::Identity(measurement::DOF, measurement::DOF);
     ros::spinOnce();
@@ -88,6 +88,7 @@ int main(int argc, char* argv[])
     for (int i = state::DOF - 6; i < state::DOF; i++)
     {
         init_P(i,i) = 0.001;
+        // init_P(i,i) = 0.0;
     }
     esekfom::esekf<state, process_noise_dof, input, measurement, measurement::DOF> kf;
     double last_predict_time = -1;
@@ -113,7 +114,7 @@ int main(int argc, char* argv[])
                 init_state.vel[2] = 0;
                 init_state.grav.vec[0] = 0;
                 init_state.grav.vec[1] = 0;
-                init_state.grav.vec[2] = 9.8;
+                init_state.grav.vec[2] = 9.81;
                 init_state.offset_R_C_B.x() = 0;
                 init_state.offset_R_C_B.y() = 0;
                 init_state.offset_R_C_B.z() = 0;
