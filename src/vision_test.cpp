@@ -8,11 +8,21 @@ using namespace std;
 // hello realsense 
 
 int maxCorners = 20;
-int maxTrackbar = 100;
+int maxblobColor = 1;
+int blobColor = 1;
+int minCircularity = 8;
+int maxCircularity = 10;
+int blobarea = 2;
+int maxblobarea = 100;
+int minConvexity = 38;
+int maxConvexity = 100;
+int minInertiaRatio = 70;
+int maxInertiaRatio = 100;
 int radius = 2;
 RNG rng(12345);
 const char* source_window = "Source image";
 const char* corners_window = "Corners detected";
+const char* blob_window = "blob image";
 void goodFeaturesToTrack_Demo( int, void* );
 Mat color_, gray_;
 vector<Point2f> corners_;
@@ -122,6 +132,43 @@ void goodFeaturesToTrack_Demo( int, void* )
     imshow( source_window, color_);
 }
 
+void blob_detect( int, void* )
+{
+    vector<KeyPoint> keypoints; 
+    // Setup SimpleBlobDetector parameters.
+    SimpleBlobDetector::Params params;
+    // Change thresholds
+    params.minThreshold = 10;
+    params.maxThreshold = 200;
+    // Filter by Color.
+    params.filterByColor = true;
+    params.blobColor = blobColor * 255;
+    // Filter by Area.
+    params.filterByArea = true;
+    params.minArea = blobarea * 100;
+    // Filter by Circularity
+    params.filterByCircularity = true;
+    params.minCircularity = (float)minCircularity/10;
+    // Filter by Convexity
+    params.filterByConvexity = true;
+    params.minConvexity = (float)minConvexity / 100;
+    // Filter by Inertia
+    params.filterByInertia = true;
+    params.minInertiaRatio = (float)minInertiaRatio / 100;
+    // Set up detector with params
+    // SimpleBlobDetector detector(params);
+    Ptr<SimpleBlobDetector> detector = SimpleBlobDetector::create(params);
+    // You can use the detector this way
+    detector->detect( gray_, keypoints);
+    namedWindow(blob_window);
+    std::cout << keypoints.size() << std::endl; 
+    Mat blob_image;
+    // detector.detect( gray, keypoints);
+    drawKeypoints( gray_, keypoints, blob_image, Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
+    // Canny(gray, imgcanny_blur, 100, 200, 3, true);
+    imshow(blob_window, blob_image);
+}
+
 float points_distance(float points1[3], float points2[3])
 {
     return sqrt(pow(points1[0] - points2[0], 2) + pow(points1[1] - points2[1], 2) + pow(points1[2] - points2[2], 2));
@@ -186,306 +233,316 @@ int main()
     cvtColor( color, gray, COLOR_BGR2GRAY );
     gray_ = gray;
     vector<Vec3f> circles;
-    HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 1, gray.rows/4, 50, 10);
+    blur( gray, gray, Size(5,5) );
+    HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, 50, 100, 80, 0, 50);
     cout << "circle size: " << circles.size() << endl;
     for (size_t i = 0; i < circles.size(); i++)
     {
         Point2f center(circles[i][0],circles[i][1]);
         float radius = circles[i][2];
-        circle(imgcanny_blur, center, radius, Scalar(255, 0, 0), 3, 8, 0);
+        circle(color, center, radius, Scalar(255, 0, 0), 3, 8, 0);
     }
-    blur( gray, gray, Size(3,3) );
-    Canny(gray, imgcanny_blur, 100, 200, 3, true);
-    namedWindow("imgCanny blur", CV_WINDOW_AUTOSIZE);
-    imshow("imgCanny blur", imgcanny_blur);
-    vector<vector<Point>> contours;
-    vector<Vec4i> hierarchy;
-    findContours( imgcanny_blur, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
-    Mat imgcontour = Mat::zeros(imgcanny_blur.size(), CV_8UC3);
-    list<int> rectangle_index;
-    for (size_t i = 0; i < contours.size(); i++)
-    {   
-        approxPolyDP(Mat(contours[i]), contours[i], arcLength(contours[i], true) * 0.02, true);
-        if (contours[i].size() == 4)
-        {   
-            rectangle_index.push_back(i);
-            double length_contour = arcLength(contours[i], false);
-            // Scalar color = Scalar(100, 100, 100);
-            // drawContours( imgcontour, contours, (int)i, color, 1, LINE_8, hierarchy, 0);
-            cout << "contour index: " << i << " length: " << length_contour << "hierarchy: " << hierarchy[i] << endl;
-        }
-        if (contours[i].size() >= 10)
-        {   
-            Scalar color = Scalar(100, 100, 100);
-            std::cout << "contours size: "<< contours[i].size() <<std::endl;
-            drawContours(imgcontour, contours, i, color, 1, LINE_8, hierarchy, 0);
-            Point2f center;
-            float radius;
-            minEnclosingCircle(contours[i], center, radius);
-            cout<< "center: " << center.x << " "<<center.y << " radius:" << radius << endl;
-            circle(imgcontour, center, cvRound(radius), Scalar(0,255,0), 1, LINE_AA);
-        }
-    }
-    list<int> gap_index;
-    for (list<int>::iterator it = rectangle_index.begin(); it != rectangle_index.end(); it++)
-    {
-        if (hierarchy[*it][2] > 0 && hierarchy[hierarchy[*it][2]][2] > 0 
-            && hierarchy[hierarchy[hierarchy[*it][2]][2]][2] > 0 && hierarchy[hierarchy[hierarchy[hierarchy[*it][2]][2]][2]][2] < 0)
-        {   
-            gap_index.push_back(*it);
-            cout << "gap index: " << *it << endl;
-        }
-    }
-    for (list<int>::iterator it = gap_index.begin(); it != gap_index.end(); it++)
-    {
-        Scalar color = Scalar(100, 100, 100);
-        drawContours( imgcontour, contours, (int)*it, color, 1, LINE_8, hierarchy, 0);
-        int inner_contour_index = hierarchy[hierarchy[hierarchy[*it][2]][2]][2];
-        drawContours( imgcontour, contours, (int)inner_contour_index, color, 1, LINE_8, hierarchy, 0);
-        cout << "outer corners: " << contours[*it] << endl;
-        cout << "inner corners: " << contours[inner_contour_index] << endl;
-        vector<Point2f> out_corners;
-        vector<Point2f> in_corners;
-        for (int i = 0; i < 4; i ++)
-        {
-            out_corners.push_back(contours[*it][i]);
-            in_corners.push_back(contours[inner_contour_index][i]);
-            circle( color_, out_corners[i], radius, Scalar(0, 0, 200), FILLED );
-            circle( color_, in_corners[i], radius, Scalar(0, 0, 200), FILLED );
-        }
-        float out_points[4][3];
-        float out_pixels[4][2];
-        float in_points[4][3];
-        float in_pixels[4][2];
-        vector<Point3f> points_vec(0);
-        vector<Point2f> pixels_vec(0);
-        int range = 5;
-        for (int i = 0; i < 4; i++)
-        {   
-            cout << "origin out corner pixels depth: " << depth_frame.get_distance(out_corners[i].x, out_corners[i].y) << endl;
-            cout << "origin in corner pixels depth: " << depth_frame.get_distance(in_corners[i].x, in_corners[i].y) << endl;
-            float out_corner_depth = depth_frame.get_distance(out_corners[i].x, out_corners[i].y);
-            float in_corner_depth = depth_frame.get_distance(in_corners[i].x, in_corners[i].y);
-            for (int j = -range; j < range+1; j++)
-            {
-                for(int k = -range; k < range+1; k++)
-                {
-                    float depth_search = depth_frame.get_distance(out_corners[i].x + k, out_corners[i].y + j);
-                    if(depth_search > 0.20 && (depth_search < out_corner_depth || out_corner_depth < 0.20))
-                    {
-                        out_corner_depth = depth_search;
-                    }
-                    depth_search = depth_frame.get_distance(in_corners[i].x + k, in_corners[i].y + j);
-                    if(depth_search > 0.20 && (depth_search < in_corner_depth || in_corner_depth < 0.20))
-                    {
-                        in_corner_depth = depth_search;
-                    }
-                }
-            }
-            cout << "searched out corner pixels depth: " << out_corner_depth << endl;
-            cout << "searched in corner pixels depth: " << in_corner_depth << endl;
-            out_pixels[i][0] = out_corners[i].x;
-            out_pixels[i][1] = out_corners[i].y;
-            in_pixels[i][0] = in_corners[i].x;
-            in_pixels[i][1] = in_corners[i].y;
-            rs2_deproject_pixel_to_point(out_points[i], &depth_intrins, out_pixels[i], out_corner_depth);
-            rs2_deproject_pixel_to_point(in_points[i], &depth_intrins, in_pixels[i], in_corner_depth);
-            points_vec.push_back(Point3f(out_points[i][0], out_points[i][1], out_points[i][2]));
-            points_vec.push_back(Point3f(in_points[i][0], in_points[i][1], in_points[i][2]));
-            pixels_vec.push_back(Point2f(out_pixels[i][0], out_pixels[i][1]));
-            pixels_vec.push_back(Point2f(in_pixels[i][0], in_pixels[i][1]));
-        }
-        plane_from_points(points_vec);
-        float centroid_pixel[2] = {0, 0};
-        rs2_project_point_to_pixel(centroid_pixel, &depth_intrins, centroid_);
-        cout << "centroid pixel: " << centroid_pixel[0] << " " << centroid_pixel[1] << endl;
-        vector<Point2f> centroid_pixel_(1);
-        centroid_pixel_[0] = Point2f(centroid_pixel[0], centroid_pixel[1]);
-        circle( color_, centroid_pixel_[0], radius, Scalar(0, 0, 200), FILLED );
-        int left_index_o[2] = {10};
-        int right_index_o[2] = {10};
-        int left_up_index;
-        int left_down_index;
-        int right_up_index;
-        int right_down_index;
-        for (int i = 0; i < 4; i++)   // find out quadrangle right and left index
-        {
-            if (out_corners[i].x < centroid_pixel[0])
-            {
-                if (left_index_o[0] == 10)
-                {
-                    left_index_o[0] = i;
-                }
-                else
-                {
-                    left_index_o[1] = i;
-                }
-            }
-            else
-            {
-                if (right_index_o[0] == 10)
-                {
-                    right_index_o[0] = i;
-                }
-                else
-                {
-                    right_index_o[1] = i; 
-                }
-            }
-        }
-        if (out_corners[left_index_o[0]].y < out_corners[left_index_o[1]].y) // find out quadrangle left_up_index and left_down_index
-        {
-            left_up_index = left_index_o[0];
-            left_down_index = left_index_o[1];
-        }
-        else
-        {
-            left_up_index = left_index_o[1];
-            left_down_index = left_index_o[0];
-        }
-        if (out_corners[right_index_o[0]].y < out_corners[right_index_o[1]].y) // find in quadrangle right_up_index and right_down_index
-        {
-            right_up_index = right_index_o[0];
-            right_down_index = right_index_o[1];
-        }
-        else
-        {
-            right_up_index = right_index_o[1];
-            right_down_index = right_index_o[0];
-        }
-        int out_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
-        // cout << "out quadrangle index: " << out_quadr_index_[0] << ' ' << out_quadr_index_[1] << ' ' << out_quadr_index_[2] << ' ' << out_quadr_index_[3] << endl;
-        
-        int left_index_i[2] = {10};
-        int right_index_i[2] = {10};
-        for (int i = 0; i < 4; i++)   // find in quadrangle right and left index
-        {
-            if (in_corners[i].x < centroid_pixel[0])
-            {
-                if (left_index_i[0] == 10)
-                {
-                    left_index_i[0] = i;
-                }
-                else
-                {
-                    left_index_i[1] = i;
-                }
-            }
-            else
-            {
-                if (right_index_i[0] == 10)
-                {
-                    right_index_i[0] = i;
-                }
-                else
-                {
-                    right_index_i[1] = i; 
-                }
-            }
-        }
-        if (in_corners[left_index_i[0]].y < in_corners[left_index_i[1]].y) // find in quadrangle left_up_index and left_down_index
-        {
-            left_up_index = left_index_i[0];
-            left_down_index = left_index_i[1];
-        }
-        else
-        {
-            left_up_index = left_index_i[1];
-            left_down_index = left_index_i[0];
-        }
-        if (in_corners[right_index_i[0]].y < in_corners[right_index_i[1]].y) // find in quadrangle right_up_index and right_down_index
-        {
-            right_up_index = right_index_i[0];
-            right_down_index = right_index_i[1];
-        }
-        else
-        {
-            right_up_index = right_index_i[1];
-            right_down_index = right_index_i[0];
-        }
-        int in_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
-        // cout << "in quadrangle index: " << in_quadr_index_[0] << ' ' << in_quadr_index_[1] << ' ' << in_quadr_index_[2] << ' ' << in_quadr_index_[3] << endl;
-        vector<Point2f> corners_sort_vec(8);
-        for (int i = 0; i < 4; i++)
-        {
-            corners_sort_vec[i] = out_corners[out_quadr_index_[i]];
-            corners_sort_vec[i + 4] = in_corners[in_quadr_index_[i]];
-        }
-        // float points_ref[8][3] = {{-0.1275f, -0.0845f, 0.0f}, {0.1275f, -0.0845f, 0.0f}, {0.1275f, 0.0845f, 0.0f}, {-0.1275f, 0.0845f, 0.0f},
-        //                                         {-0.0975f, -0.0545f, 0.0f}, {0.0975f, -0.0545f, 0.0f}, {0.0975f, 0.0545f, 0.0f}, {-0.0975f, 0.0545f, 0.0f}};
-        // vector<Point3f> points_ref_vec(0);
-        // for (int i = 0; i < 8; i++)
-        // {
-        //     points_ref_vec.push_back( Point3f(points_ref[i][0], points_ref[i][1], points_ref[i][2]) );
-        // }
-        // Mat rvec, tvec;
-        // solvePnP(points_ref_vec, corners_sort_vec, cameraMatrix, distCoeffs, rvec, tvec);
-        // cv::Matx33f R;
-        // Rodrigues(rvec, R);
-        // cout << "plane translation: " << tvec << endl;
-        // cout << "plane norm direction: " << R.col(2) << endl;
-        // float centroid_point_ref[3] = {0};
-        // for (int i = 0; i < 3; i++)
-        // {
-        //     centroid_point_ref[i] = tvec.at<float>(i);
-        // }
-        // float centroid_pixel_ref[2] = {0};
-        // rs2_project_point_to_pixel(centroid_pixel_ref, &depth_intrins, centroid_point_ref);
-        // vector<Point2f> centroid_pixel_ref_vec(1);
-        // centroid_pixel_ref_vec[0] = Point2f(centroid_pixel_ref[0], centroid_pixel_ref[1]);
-        // cout << "centroid piexl from reference: " << centroid_pixel_ref_vec[0] << endl;
-        // circle( color_, centroid_pixel_ref_vec[0], radius, Scalar(150, 0, 0), FILLED);
-        // rs2_extrinsics plane_extrin;
-        // for(int i = 0; i < 3; i++)
-        // {
-        //     for (int j = 0; j < 3; j++)
-        //     {
-        //         plane_extrin.rotation[i * 3 + j] = R(j,i);
-        //     }
-        // }
-        // for (int i = 0; i < 3; i++)
-        // {
-        //     plane_extrin.translation[i] = tvec.at<float>(i);
-        // }
-        // float points_camera[8][3] = {0};
-        // float pixels_camera[8][2] = {0};
-        // vector<Point2f> pixels_camera_vec(8);
-        // // for (int i = 0; i < 4; i++)
-        // // {
-        // //     cout << "point from depth: " << points[out_quadr_index[i]][0] << " " << points[out_quadr_index[i]][1] << " " << points[out_quadr_index[i]][2] << endl;
-        // // }
-        // // for (int i = 0; i < 4; i++)
-        // // {
-        // //     cout << "point from depth: " << points[in_quadr_index[i]][0] << " " << points[in_quadr_index[i]][1] << " " << points[in_quadr_index[i]][2] << endl;
-        // // }
-        // for (int i = 0; i < 8; i++)
-        // {
-        //     rs2_transform_point_to_point(points_camera[i], &plane_extrin, points_ref[i]);
-        //     // cout << "point from refer: " << points_camera[i][0] << " " << points_camera[i][1] << " " << points_camera[i][2] << endl;
-        //     rs2_project_point_to_pixel(pixels_camera[i], &depth_intrins, points_camera[i]);
-        //     pixels_camera_vec[i] = Point2f(pixels_camera[i][0], pixels_camera[i][1]);
-        //     circle( color_, pixels_camera_vec[i], radius, Scalar(200, 0, 0), FILLED);
-        // }
-    }
-    namedWindow("imgContour", CV_WINDOW_AUTOSIZE);
-    imshow("imgContour", imgcontour);
-    namedWindow( source_window );
-    imshow( source_window, color_);
-    // cv::cvtColor(color, color, COLOR_RGB2BGR);
 
-    // Apply Histogram Equalization
-    Mat depth_new;
-    Mat depth_nnew;
-    // equalizeHist( depth, depth_new);
-    depth.convertTo(depth_new, CV_8UC1, 0.1, 0); 
-    // applyColorMap(depth_new, depth_nnew, COLORMAP_JET);
-    // depth.convertTo(depth_new, CV_8UC1, 1, 0); 
-    // namedWindow("DISPLAY IMAGE", WINDOW_AUTOSIZE);
-    namedWindow("DISPLAY IMAGE NEW", WINDOW_AUTOSIZE);
-    // imshow("DISPLAY IMAGE", depth_nnew);
-    imshow("DISPLAY IMAGE NEW", depth_new);
+    namedWindow( blob_window );
+    createTrackbar( "blob color:", blob_window, &blobColor, maxblobColor, blob_detect );
+    createTrackbar( "blob minCircularity:", blob_window, &minCircularity, maxCircularity, blob_detect );
+    createTrackbar( "blob minarea:", blob_window, &blobarea, maxblobarea, blob_detect );
+    createTrackbar( "blob minconvexity:", blob_window, &minConvexity, maxConvexity, blob_detect );
+    createTrackbar( "blob minInertiaRatio:", blob_window, &minInertiaRatio, maxInertiaRatio, blob_detect );
+    imshow(blob_window, color);
+    blob_detect(0, 0);
+    // namedWindow("imgCanny blur", CV_WINDOW_AUTOSIZE);
+    // imshow("imgCanny blur", imgcanny_blur);
+    // vector<vector<Point>> contours;
+    // vector<Vec4i> hierarchy;
+    // findContours( imgcanny_blur, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+    // Mat imgcontour = Mat::zeros(imgcanny_blur.size(), CV_8UC3);
+    // list<int> rectangle_index;
+    // for (size_t i = 0; i < contours.size(); i++)
+    // {   
+    //     approxPolyDP(Mat(contours[i]), contours[i], arcLength(contours[i], true) * 0.02, true);
+    //     if (contours[i].size() == 4)
+    //     {   
+    //         rectangle_index.push_back(i);
+    //         double length_contour = arcLength(contours[i], false);
+    //         // Scalar color = Scalar(100, 100, 100);
+    //         // drawContours( imgcontour, contours, (int)i, color, 1, LINE_8, hierarchy, 0);
+    //         cout << "contour index: " << i << " length: " << length_contour << "hierarchy: " << hierarchy[i] << endl;
+    //     }
+    //     if (contours[i].size() >= 10)
+    //     {   
+    //         Scalar color = Scalar(100, 100, 100);
+    //         // std::cout << "contours size: "<< contours[i].size() <<std::endl;
+    //         drawContours(imgcontour, contours, i, color, 1, LINE_8, hierarchy, 0);
+    //         Point2f center;
+    //         float radius;
+    //         minEnclosingCircle(contours[i], center, radius);
+    //         // cout<< "center: " << center.x << " "<<center.y << " radius:" << radius << endl;
+    //         circle(imgcontour, center, cvRound(radius), Scalar(0,255,0), 1, LINE_AA);
+    //     }
+    // }
+    // list<int> gap_index;
+    // for (list<int>::iterator it = rectangle_index.begin(); it != rectangle_index.end(); it++)
+    // {
+    //     if (hierarchy[*it][2] > 0 && hierarchy[hierarchy[*it][2]][2] > 0 
+    //         && hierarchy[hierarchy[hierarchy[*it][2]][2]][2] > 0 && hierarchy[hierarchy[hierarchy[hierarchy[*it][2]][2]][2]][2] < 0)
+    //     {   
+    //         gap_index.push_back(*it);
+    //         cout << "gap index: " << *it << endl;
+    //     }
+    // }
+    // for (list<int>::iterator it = gap_index.begin(); it != gap_index.end(); it++)
+    // {
+    //     Scalar color = Scalar(100, 100, 100);
+    //     drawContours( imgcontour, contours, (int)*it, color, 1, LINE_8, hierarchy, 0);
+    //     int inner_contour_index = hierarchy[hierarchy[hierarchy[*it][2]][2]][2];
+    //     drawContours( imgcontour, contours, (int)inner_contour_index, color, 1, LINE_8, hierarchy, 0);
+    //     cout << "outer corners: " << contours[*it] << endl;
+    //     cout << "inner corners: " << contours[inner_contour_index] << endl;
+    //     vector<Point2f> out_corners;
+    //     vector<Point2f> in_corners;
+    //     for (int i = 0; i < 4; i ++)
+    //     {
+    //         out_corners.push_back(contours[*it][i]);
+    //         in_corners.push_back(contours[inner_contour_index][i]);
+    //         circle( color_, out_corners[i], radius, Scalar(0, 0, 200), FILLED );
+    //         circle( color_, in_corners[i], radius, Scalar(0, 0, 200), FILLED );
+    //     }
+    //     float out_points[4][3];
+    //     float out_pixels[4][2];
+    //     float in_points[4][3];
+    //     float in_pixels[4][2];
+    //     vector<Point3f> points_vec(0);
+    //     vector<Point2f> pixels_vec(0);
+    //     int range = 5;
+    //     for (int i = 0; i < 4; i++)
+    //     {   
+    //         cout << "origin out corner pixels depth: " << depth_frame.get_distance(out_corners[i].x, out_corners[i].y) << endl;
+    //         cout << "origin in corner pixels depth: " << depth_frame.get_distance(in_corners[i].x, in_corners[i].y) << endl;
+    //         float out_corner_depth = depth_frame.get_distance(out_corners[i].x, out_corners[i].y);
+    //         float in_corner_depth = depth_frame.get_distance(in_corners[i].x, in_corners[i].y);
+    //         for (int j = -range; j < range+1; j++)
+    //         {
+    //             for(int k = -range; k < range+1; k++)
+    //             {
+    //                 float depth_search = depth_frame.get_distance(out_corners[i].x + k, out_corners[i].y + j);
+    //                 if(depth_search > 0.20 && (depth_search < out_corner_depth || out_corner_depth < 0.20))
+    //                 {
+    //                     out_corner_depth = depth_search;
+    //                 }
+    //                 depth_search = depth_frame.get_distance(in_corners[i].x + k, in_corners[i].y + j);
+    //                 if(depth_search > 0.20 && (depth_search < in_corner_depth || in_corner_depth < 0.20))
+    //                 {
+    //                     in_corner_depth = depth_search;
+    //                 }
+    //             }
+    //         }
+    //         cout << "searched out corner pixels depth: " << out_corner_depth << endl;
+    //         cout << "searched in corner pixels depth: " << in_corner_depth << endl;
+    //         out_pixels[i][0] = out_corners[i].x;
+    //         out_pixels[i][1] = out_corners[i].y;
+    //         in_pixels[i][0] = in_corners[i].x;
+    //         in_pixels[i][1] = in_corners[i].y;
+    //         rs2_deproject_pixel_to_point(out_points[i], &depth_intrins, out_pixels[i], out_corner_depth);
+    //         rs2_deproject_pixel_to_point(in_points[i], &depth_intrins, in_pixels[i], in_corner_depth);
+    //         points_vec.push_back(Point3f(out_points[i][0], out_points[i][1], out_points[i][2]));
+    //         points_vec.push_back(Point3f(in_points[i][0], in_points[i][1], in_points[i][2]));
+    //         pixels_vec.push_back(Point2f(out_pixels[i][0], out_pixels[i][1]));
+    //         pixels_vec.push_back(Point2f(in_pixels[i][0], in_pixels[i][1]));
+    //     }
+    //     plane_from_points(points_vec);
+    //     float centroid_pixel[2] = {0, 0};
+    //     rs2_project_point_to_pixel(centroid_pixel, &depth_intrins, centroid_);
+    //     cout << "centroid pixel: " << centroid_pixel[0] << " " << centroid_pixel[1] << endl;
+    //     vector<Point2f> centroid_pixel_(1);
+    //     centroid_pixel_[0] = Point2f(centroid_pixel[0], centroid_pixel[1]);
+    //     circle( color_, centroid_pixel_[0], radius, Scalar(0, 0, 200), FILLED );
+    //     int left_index_o[2] = {10};
+    //     int right_index_o[2] = {10};
+    //     int left_up_index;
+    //     int left_down_index;
+    //     int right_up_index;
+    //     int right_down_index;
+    //     for (int i = 0; i < 4; i++)   // find out quadrangle right and left index
+    //     {
+    //         if (out_corners[i].x < centroid_pixel[0])
+    //         {
+    //             if (left_index_o[0] == 10)
+    //             {
+    //                 left_index_o[0] = i;
+    //             }
+    //             else
+    //             {
+    //                 left_index_o[1] = i;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             if (right_index_o[0] == 10)
+    //             {
+    //                 right_index_o[0] = i;
+    //             }
+    //             else
+    //             {
+    //                 right_index_o[1] = i; 
+    //             }
+    //         }
+    //     }
+    //     if (out_corners[left_index_o[0]].y < out_corners[left_index_o[1]].y) // find out quadrangle left_up_index and left_down_index
+    //     {
+    //         left_up_index = left_index_o[0];
+    //         left_down_index = left_index_o[1];
+    //     }
+    //     else
+    //     {
+    //         left_up_index = left_index_o[1];
+    //         left_down_index = left_index_o[0];
+    //     }
+    //     if (out_corners[right_index_o[0]].y < out_corners[right_index_o[1]].y) // find in quadrangle right_up_index and right_down_index
+    //     {
+    //         right_up_index = right_index_o[0];
+    //         right_down_index = right_index_o[1];
+    //     }
+    //     else
+    //     {
+    //         right_up_index = right_index_o[1];
+    //         right_down_index = right_index_o[0];
+    //     }
+    //     int out_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
+    //     // cout << "out quadrangle index: " << out_quadr_index_[0] << ' ' << out_quadr_index_[1] << ' ' << out_quadr_index_[2] << ' ' << out_quadr_index_[3] << endl;
+        
+    //     int left_index_i[2] = {10};
+    //     int right_index_i[2] = {10};
+    //     for (int i = 0; i < 4; i++)   // find in quadrangle right and left index
+    //     {
+    //         if (in_corners[i].x < centroid_pixel[0])
+    //         {
+    //             if (left_index_i[0] == 10)
+    //             {
+    //                 left_index_i[0] = i;
+    //             }
+    //             else
+    //             {
+    //                 left_index_i[1] = i;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             if (right_index_i[0] == 10)
+    //             {
+    //                 right_index_i[0] = i;
+    //             }
+    //             else
+    //             {
+    //                 right_index_i[1] = i; 
+    //             }
+    //         }
+    //     }
+    //     if (in_corners[left_index_i[0]].y < in_corners[left_index_i[1]].y) // find in quadrangle left_up_index and left_down_index
+    //     {
+    //         left_up_index = left_index_i[0];
+    //         left_down_index = left_index_i[1];
+    //     }
+    //     else
+    //     {
+    //         left_up_index = left_index_i[1];
+    //         left_down_index = left_index_i[0];
+    //     }
+    //     if (in_corners[right_index_i[0]].y < in_corners[right_index_i[1]].y) // find in quadrangle right_up_index and right_down_index
+    //     {
+    //         right_up_index = right_index_i[0];
+    //         right_down_index = right_index_i[1];
+    //     }
+    //     else
+    //     {
+    //         right_up_index = right_index_i[1];
+    //         right_down_index = right_index_i[0];
+    //     }
+    //     int in_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
+    //     // cout << "in quadrangle index: " << in_quadr_index_[0] << ' ' << in_quadr_index_[1] << ' ' << in_quadr_index_[2] << ' ' << in_quadr_index_[3] << endl;
+    //     vector<Point2f> corners_sort_vec(8);
+    //     for (int i = 0; i < 4; i++)
+    //     {
+    //         corners_sort_vec[i] = out_corners[out_quadr_index_[i]];
+    //         corners_sort_vec[i + 4] = in_corners[in_quadr_index_[i]];
+    //     }
+    //     // float points_ref[8][3] = {{-0.1275f, -0.0845f, 0.0f}, {0.1275f, -0.0845f, 0.0f}, {0.1275f, 0.0845f, 0.0f}, {-0.1275f, 0.0845f, 0.0f},
+    //     //                                         {-0.0975f, -0.0545f, 0.0f}, {0.0975f, -0.0545f, 0.0f}, {0.0975f, 0.0545f, 0.0f}, {-0.0975f, 0.0545f, 0.0f}};
+    //     // vector<Point3f> points_ref_vec(0);
+    //     // for (int i = 0; i < 8; i++)
+    //     // {
+    //     //     points_ref_vec.push_back( Point3f(points_ref[i][0], points_ref[i][1], points_ref[i][2]) );
+    //     // }
+    //     // Mat rvec, tvec;
+    //     // solvePnP(points_ref_vec, corners_sort_vec, cameraMatrix, distCoeffs, rvec, tvec);
+    //     // cv::Matx33f R;
+    //     // Rodrigues(rvec, R);
+    //     // cout << "plane translation: " << tvec << endl;
+    //     // cout << "plane norm direction: " << R.col(2) << endl;
+    //     // float centroid_point_ref[3] = {0};
+    //     // for (int i = 0; i < 3; i++)
+    //     // {
+    //     //     centroid_point_ref[i] = tvec.at<float>(i);
+    //     // }
+    //     // float centroid_pixel_ref[2] = {0};
+    //     // rs2_project_point_to_pixel(centroid_pixel_ref, &depth_intrins, centroid_point_ref);
+    //     // vector<Point2f> centroid_pixel_ref_vec(1);
+    //     // centroid_pixel_ref_vec[0] = Point2f(centroid_pixel_ref[0], centroid_pixel_ref[1]);
+    //     // cout << "centroid piexl from reference: " << centroid_pixel_ref_vec[0] << endl;
+    //     // circle( color_, centroid_pixel_ref_vec[0], radius, Scalar(150, 0, 0), FILLED);
+    //     // rs2_extrinsics plane_extrin;
+    //     // for(int i = 0; i < 3; i++)
+    //     // {
+    //     //     for (int j = 0; j < 3; j++)
+    //     //     {
+    //     //         plane_extrin.rotation[i * 3 + j] = R(j,i);
+    //     //     }
+    //     // }
+    //     // for (int i = 0; i < 3; i++)
+    //     // {
+    //     //     plane_extrin.translation[i] = tvec.at<float>(i);
+    //     // }
+    //     // float points_camera[8][3] = {0};
+    //     // float pixels_camera[8][2] = {0};
+    //     // vector<Point2f> pixels_camera_vec(8);
+    //     // // for (int i = 0; i < 4; i++)
+    //     // // {
+    //     // //     cout << "point from depth: " << points[out_quadr_index[i]][0] << " " << points[out_quadr_index[i]][1] << " " << points[out_quadr_index[i]][2] << endl;
+    //     // // }
+    //     // // for (int i = 0; i < 4; i++)
+    //     // // {
+    //     // //     cout << "point from depth: " << points[in_quadr_index[i]][0] << " " << points[in_quadr_index[i]][1] << " " << points[in_quadr_index[i]][2] << endl;
+    //     // // }
+    //     // for (int i = 0; i < 8; i++)
+    //     // {
+    //     //     rs2_transform_point_to_point(points_camera[i], &plane_extrin, points_ref[i]);
+    //     //     // cout << "point from refer: " << points_camera[i][0] << " " << points_camera[i][1] << " " << points_camera[i][2] << endl;
+    //     //     rs2_project_point_to_pixel(pixels_camera[i], &depth_intrins, points_camera[i]);
+    //     //     pixels_camera_vec[i] = Point2f(pixels_camera[i][0], pixels_camera[i][1]);
+    //     //     circle( color_, pixels_camera_vec[i], radius, Scalar(200, 0, 0), FILLED);
+    //     // }
+    // }
+    // namedWindow("imgContour", CV_WINDOW_AUTOSIZE);
+    // imshow("imgContour", imgcontour);
     // namedWindow( source_window );
-    // createTrackbar( "Max corners:", source_window, &maxCorners, maxTrackbar, goodFeaturesToTrack_Demo );
+    // imshow( source_window, color_);
+    // // cv::cvtColor(color, color, COLOR_RGB2BGR);
+
+    // // Apply Histogram Equalization
+    // Mat depth_new;
+    // Mat depth_nnew;
+    // // equalizeHist( depth, depth_new);
+    // depth.convertTo(depth_new, CV_8UC1, 0.1, 0); 
+    // // applyColorMap(depth_new, depth_nnew, COLORMAP_JET);
+    // // depth.convertTo(depth_new, CV_8UC1, 1, 0); 
+    // // namedWindow("DISPLAY IMAGE", WINDOW_AUTOSIZE);
+    // namedWindow("DISPLAY IMAGE NEW", WINDOW_AUTOSIZE);
+    // // imshow("DISPLAY IMAGE", depth_nnew);
+    // imshow("DISPLAY IMAGE NEW", depth_new);
+
+
+    // namedWindow( source_window );
+    // // createTrackbar( "Max corners:", source_window, &maxCorners, maxTrackbar, goodFeaturesToTrack_Demo );
     // imshow( source_window, color );
 
     // goodFeaturesToTrack_Demo( 0, 0 );
