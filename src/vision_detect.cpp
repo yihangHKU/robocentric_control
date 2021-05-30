@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
     rs2::pipeline pipe;
     rs2::config cfg;
     rs2::colorizer color_map;
-    cfg.enable_stream(RS2_STREAM_COLOR, 1280, 720, RS2_FORMAT_BGR8, 30);
+    cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 60);
     cfg.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16, 90);
     cfg.enable_stream(RS2_STREAM_INFRARED, 848, 480, RS2_FORMAT_Y8, 90);
     pipe.start(cfg);
@@ -199,13 +199,17 @@ int main(int argc, char* argv[])
         {
             Eigen::Matrix<float, 3, 1> pub_P = P_buffer[0];
             P_buffer.clear();
-            gap_pose.pose.position.x = pub_P[0];
-            gap_pose.pose.position.y = pub_P[1];
-            gap_pose.pose.position.z = pub_P[2];
-            gap_array.poses.push_back(gap_pose.pose);
-            gap_array.header.stamp = ros::Time::now();
-            gap_pose_pub.publish(gap_array); 
-            gap_array.poses.clear();
+            if((last_pub_P.norm() < 0.01 || (last_pub_P - pub_P).norm()< 0.6) && pub_P.norm() > 0.5)
+            {
+                gap_pose.pose.position.x = pub_P[0];
+                gap_pose.pose.position.y = pub_P[1];
+                gap_pose.pose.position.z = pub_P[2];
+                gap_array.poses.push_back(gap_pose.pose);
+                gap_array.header.stamp = ros::Time::now();
+                gap_pose_pub.publish(gap_array); 
+                gap_array.poses.clear();
+                last_pub_P = pub_P;
+            }
         }
         
         

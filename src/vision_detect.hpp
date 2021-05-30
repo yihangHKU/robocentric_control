@@ -191,13 +191,13 @@ bool blob_detect_init(Ptr<SimpleBlobDetector> &detector)
 {
     int blobColor = 255;
     float minCircularity = 0.8;
-    int blobarea = 200;
-    float minConvexity = 0.38;
-    float minInertiaRatio = 0.7;
+    int blobarea = 60;
+    float minConvexity = 0.72;
+    float minInertiaRatio = 0.8;
     // Setup SimpleBlobDetector parameters.
     SimpleBlobDetector::Params params;
     // Change thresholds
-    params.thresholdStep = 30;
+    params.thresholdStep = 10;
     params.minThreshold = 10;
     params.maxThreshold = 200;
     // Filter by Color.
