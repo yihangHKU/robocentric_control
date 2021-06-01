@@ -4,8 +4,9 @@
 #include <mutex>
 #include <deque>
 // #include "state_estim_gap.hpp"
-#include "state_estim_hover.hpp"
+// #include "state_estim_hover.hpp"
 //#include "state_estim_hover2.hpp"
+#include "state_estim_hover3.hpp"
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PointStamped.h>
@@ -62,15 +63,17 @@ int main(int argc, char* argv[])
     fout_out.open("/home/dji/catkin_ws/debug/mat_out.txt", std::ios::out);
     fout_input.open("/home/dji/catkin_ws/debug/imu.txt", std::ios::out);
     ros::Subscriber imu_sub = nh.subscribe("/mavros/imu/data_raw", 1000, imu_cb);
-    ros::Subscriber gap_sub = nh.subscribe("/robocentric/camera/gap_pose2", 1000, gap_cb);
+    ros::Subscriber gap_sub = nh.subscribe("/robocentric/camera/gap_pose", 1000, gap_cb);
     ros::Publisher pose_pub = nh.advertise<geometry_msgs::PoseStamped> ("robocentric/pose", 100);
     ros::Publisher point_pub = nh.advertise<geometry_msgs::PointStamped> ("robocentric/point2", 100);
     ros::Publisher grav_pub = nh.advertise<geometry_msgs::Vector3Stamped> ("robocentric/gravity", 100);
+    ros::Publisher line_pub = nh.advertise<geometry_msgs::Vector3Stamped> ("robocentric/line", 100);
     ros::Publisher vel_pub = nh.advertise<geometry_msgs::Vector3Stamped> ("robocentric/velocity", 100);
     geometry_msgs::PoseStamped pose;
     geometry_msgs::PointStamped point2;
     geometry_msgs::Vector3Stamped grav;
     geometry_msgs::Vector3Stamped vel;
+    geometry_msgs::Vector3Stamped line;
     double step = 0;
     ros::Rate rate(3000);
     const int process_noise_dof = 12;
@@ -226,6 +229,11 @@ int main(int argc, char* argv[])
             grav.vector.y = s.grav.vec[1];
             grav.vector.z = s.grav.vec[2];
             grav_pub.publish(grav);
+            line.header.stamp = ros::Time::now();
+            line.vector.x = s.line.vec[0];
+            line.vector.y = s.line.vec[1];
+            line.vector.z = s.line.vec[2];
+            line_pub.publish(line);
             vel.header.stamp = ros::Time::now();
             vel.vector.x = s.vel[0];
             vel.vector.y = s.vel[1];
