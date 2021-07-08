@@ -18,6 +18,7 @@ using namespace std;
 cv_bridge::CvImagePtr cv_ptr;
 cv_bridge::CvImagePtr cv_ptr_depth;
 Mat color(Size(848, 480), CV_8UC3);
+Mat gray;
 Mat depth(Size(848, 480), CV_16UC1);
 Mat depth_new;
 static const std::string OPENCV_WINDOW = "Image window";

@@ -1,7 +1,11 @@
 #include <iostream>
+#include <ros/ros.h>
 #include <opencv2/opencv.hpp>
 #include <librealsense2/rs.hpp>
 #include <librealsense2/rsutil.h>
+#include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/Image.h>
+#include <sensor_msgs/CameraInfo.h>
 using namespace cv; 
 using namespace std;
 
@@ -12,22 +16,33 @@ int maxblobColor = 1;
 int blobColor = 1;
 int minCircularity = 8;
 int maxCircularity = 10;
-int blobarea = 2;
+int blobarea = 10;
 int maxblobarea = 100;
-int minConvexity = 38;
+int minConvexity = 85;
 int maxConvexity = 100;
-int minInertiaRatio = 70;
+int minInertiaRatio = 30;
 int maxInertiaRatio = 100;
 int radius = 2;
 RNG rng(12345);
 const char* source_window = "Source image";
 const char* corners_window = "Corners detected";
 const char* blob_window = "blob image";
+static const std::string OPENCV_WINDOW = "Image window";
 void goodFeaturesToTrack_Demo( int, void* );
-Mat color_, gray_;
+Mat gray_(Size(848, 480), CV_8UC1);
+Mat color(Size(848, 480), CV_8UC3);
+Mat color_(Size(848, 480), CV_8UC3);
+Mat gray(Size(848, 480), CV_8UC1);
+deque<Mat> color_deque;
+deque<Mat> gray_deque;
+cv_bridge::CvImagePtr cv_ptr;
 vector<Point2f> corners_;
 float centroid_[3] = {0, 0, 0};
 vector<float> direction_ = {0, 0 , 0};
+vector<KeyPoint> last_kp;
+bool detect_init = false;
+bool write_jpg = false;
+string jpg_dir = "/home/dji/catkin_ws/src/robocentric_control/image/";
 
 void plane_from_points(vector<Point3f> points)
 {   
@@ -132,12 +147,39 @@ void goodFeaturesToTrack_Demo( int, void* )
     imshow( source_window, color_);
 }
 
+void nearest_pixel_find(KeyPoint &last_kp, vector<KeyPoint> &keypoints, float minsize)
+{
+    int i = 0;
+    int min_pos = 0;
+    float distance_min = sqrt(pow(last_kp.pt.x - keypoints.at(0).pt.x, 2) + pow(last_kp.pt.y - keypoints.at(0).pt.y, 2));
+    for (i = 1; i < keypoints.size(); i++)
+    {   
+        float distance = sqrt(pow(last_kp.pt.x - keypoints.at(i).pt.x, 2) + pow(last_kp.pt.y - keypoints.at(i).pt.y, 2));
+        if(distance_min > distance)
+        {
+            distance_min = distance;
+            min_pos = i;
+        }
+    }
+    if (keypoints.at(min_pos).size < 2 * minsize && distance_min < 100.0f)
+    {
+        last_kp = keypoints.at(min_pos);
+        keypoints.erase(keypoints.begin() + min_pos);
+    } 
+    else
+    {
+        cout << "distance: " << distance_min << endl;
+        cout << "keypoint size: " << keypoints.at(min_pos).size << endl;
+    }
+}
+
 void blob_detect( int, void* )
 {
     vector<KeyPoint> keypoints; 
     // Setup SimpleBlobDetector parameters.
     SimpleBlobDetector::Params params;
     // Change thresholds
+    params.thresholdStep = 10;
     params.minThreshold = 10;
     params.maxThreshold = 200;
     // Filter by Color.
@@ -145,7 +187,7 @@ void blob_detect( int, void* )
     params.blobColor = blobColor * 255;
     // Filter by Area.
     params.filterByArea = true;
-    params.minArea = blobarea * 100;
+    params.minArea = blobarea * 10;
     // Filter by Circularity
     params.filterByCircularity = true;
     params.minCircularity = (float)minCircularity/10;
@@ -160,13 +202,76 @@ void blob_detect( int, void* )
     Ptr<SimpleBlobDetector> detector = SimpleBlobDetector::create(params);
     // You can use the detector this way
     detector->detect( gray_, keypoints);
-    namedWindow(blob_window);
-    std::cout << keypoints.size() << std::endl; 
+        // namedWindow(blob_window);
+    // std::cout << keypoints.size() << std::endl;
     Mat blob_image;
-    // detector.detect( gray, keypoints);
+    namedWindow(blob_window);
+        // detector.detect( gray, keypoints);
     drawKeypoints( gray_, keypoints, blob_image, Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
-    // Canny(gray, imgcanny_blur, 100, 200, 3, true);
-    imshow(blob_window, blob_image);
+        // Canny(gray, imgcanny_blur, 100, 200, 3, true);
+    if (!detect_init)
+    {
+        if (keypoints.size() == 2 && sqrt(pow(keypoints.at(0).pt.x - keypoints.at(1).pt.x, 2) + pow(keypoints.at(0).pt.y - keypoints.at(1).pt.y, 2)) < 100.0f)
+        {
+            if (keypoints.at(0).pt.x < keypoints.at(1).pt.x)
+            {
+                last_kp.push_back(keypoints.at(0));
+                last_kp.push_back(keypoints.at(1));
+            }
+            else
+            {
+                last_kp.push_back(keypoints.at(1));
+                last_kp.push_back(keypoints.at(0));
+            }  
+            keypoints.clear();
+            detect_init = true; 
+            for (int i = 0; i < last_kp.size(); i++)
+            {
+                char num[1];
+                sprintf(num, "%d", i);
+                cv::putText(blob_image,string(num),last_kp.at(i).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+            }
+            cout << "detect init" << endl;  
+        }
+        else
+        {
+            cout << "detect init error" << endl;
+        }
+    }
+    else if (keypoints.size() >= 2)
+    {   
+        float min_size = min(last_kp.at(0).size, last_kp.at(1).size);
+        for (int i = 0; i < last_kp.size(); i++)
+        {
+            nearest_pixel_find(last_kp.at(i), keypoints, min_size);
+        }
+        if(last_kp.at(0).pt.x > last_kp.at(1).pt.x)
+        {
+            swap(last_kp.at(0), last_kp.at(1));
+        }
+        for (int i = 0; i < last_kp.size(); i++)
+        {
+            char num[1];
+            sprintf(num, "%d", i);
+            cv::putText(blob_image,string(num),last_kp.at(i).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+        }
+    }
+    else
+    {
+        detect_init = false;
+        last_kp.clear();
+    }
+
+    if(!keypoints.empty())
+    {
+        for (int i = 0; i < keypoints.size(); i++)
+        {
+            char num[1];
+            sprintf(num, "%d", i+2);
+            cv::putText(blob_image,string(num), keypoints.at(i).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+        }
+    }
+    imshow(blob_window, blob_image);   
 }
 
 float points_distance(float points1[3], float points2[3])
@@ -188,407 +293,136 @@ float parallel_check(float vector1[3], float vector2[3])
     return abs(vector1[0] * vector2[0] + vector1[1] * vector2[1] + vector1[2] * vector1[2]);
 }
 
-
-int main()
-{  
-    rs2::pipeline pipe;
-    rs2::config cfg;
-    // rs2::colorizer color_map;
-    cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 60);
-    cfg.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16, 60);
-    // cfg.enable_stream(RS2_STREAM_INFRARED, 848, 480, RS2_FORMAT_Y8, 60);
-    pipe.start(cfg);
-    rs2::frameset frames;
-    for(int i = 0; i < 30; i++)
+void color_cb(const sensor_msgs::Image::ConstPtr &msg)
+{   
+    try
     {
-        frames = pipe.wait_for_frames();
+       cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
     }
-    rs2::align align_to_color(RS2_STREAM_COLOR);
-    // rs2::align align_to_depth(RS2_STREAM_DEPTH);
-    frames = align_to_color.process(frames);
-    rs2::frame color_frame = frames.get_color_frame();
-    rs2::depth_frame depth_frame = frames.get_depth_frame();
-    // rs2::frame ir_frame = frames.first(RS2_STREAM_INFRARED);
-    float width = depth_frame.get_width();
-    float height = depth_frame.get_height();
-    float dist_to_center = depth_frame.get_distance(width/2, height/2);
-    rs2_intrinsics depth_intrins = rs2::video_stream_profile(depth_frame.get_profile()).get_intrinsics();
-    rs2_intrinsics color_intrins = rs2::video_stream_profile(color_frame.get_profile()).get_intrinsics();
-    cv::Matx33f cameraMatrix = {depth_intrins.fx, 0., depth_intrins.ppx, 0, depth_intrins.fy, depth_intrins.ppy, 0, 0 ,0};
-    vector<float> distCoeffs = {depth_intrins.coeffs[0], depth_intrins.coeffs[1], depth_intrins.coeffs[2], depth_intrins.coeffs[3], depth_intrins.coeffs[4]};
+    catch (cv_bridge::Exception& e)
+    {
+        ROS_ERROR("cv_bridge exception: %s", e.what());
+        return;
+    }
+    color = cv_ptr->image;
+    char temp[64] ;
+    sprintf(temp, "%d", (int)color_deque.size());
+    string log_file = jpg_dir + string(temp) + ".jpg";
+    imwrite(log_file, color);
+    // cvtColor( color, gray, COLOR_BGR2GRAY );
+    // blur( gray, gray, Size(3,3) );
+    color_deque.push_back(color);
+    // if (color_deque.size() < 100)
+    // {
+    //     color_deque.push_back(color);
+    //     gray_deque.push_back(gray);
+    // }
+    // cout << "c: "<< color_deque.size() << endl;
+    // cout << "g: "<< gray_deque.size() << endl;
+}
+
+int main(int argc, char* argv[])
+{   
+    ros::init(argc, argv, "mocap_detect");
+    ros::NodeHandle nh;
     
-    // for (int i = 0; i<5; i++)
-    // {    
-    //     cout << "depth distcoeffs: " << distCoeffs[i] << endl;
+    // rs2::pipeline pipe;
+    // rs2::config cfg;
+    // // rs2::colorizer color_map;
+    // cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 60);
+    // cfg.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16, 60);
+    // // cfg.enable_stream(RS2_STREAM_INFRARED, 848, 480, RS2_FORMAT_Y8, 60);
+    // pipe.start(cfg);
+    // rs2::frameset frames;
+    // for(int i = 0; i < 30; i++)
+    // {
+    //     frames = pipe.wait_for_frames();
     // }
-    // cout << "depth intrinsics ppx" << cameraMatrix[0][2] << endl;
-    // rs2::frame colorized_depth = color_map.colorize(depth_frame);
-    Mat color(Size(width, height), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
-    color_ = color;
-    Mat depth(Size(width, height), CV_16UC1, (void*)depth_frame.get_data(), Mat::AUTO_STEP);
-    // Mat ir(Size(848, 480), CV_8UC1, (void*)ir_frame.get_data(), Mat::AUTO_STEP); 
-    Mat gray;
-    // Mat imgcanny;
-    Mat imgcanny_blur;
-    cvtColor( color, gray, COLOR_BGR2GRAY );
-    gray_ = gray;
+    // rs2::align align_to_color(RS2_STREAM_COLOR);
+    // frames = align_to_color.process(frames);
+    // rs2::frame color_frame = frames.get_color_frame();
+    // rs2::depth_frame depth_frame = frames.get_depth_frame();
+    // // rs2::frame ir_frame = frames.first(RS2_STREAM_INFRARED);
+    // float width = depth_frame.get_width();
+    // float height = depth_frame.get_height();
+    // float dist_to_center = depth_frame.get_distance(width/2, height/2);
+    // rs2_intrinsics depth_intrins = rs2::video_stream_profile(depth_frame.get_profile()).get_intrinsics();
+    // rs2_intrinsics color_intrins = rs2::video_stream_profile(color_frame.get_profile()).get_intrinsics();
+    // cv::Matx33f cameraMatrix = {depth_intrins.fx, 0., depth_intrins.ppx, 0, depth_intrins.fy, depth_intrins.ppy, 0, 0 ,0};
+    // vector<float> distCoeffs = {depth_intrins.coeffs[0], depth_intrins.coeffs[1], depth_intrins.coeffs[2], depth_intrins.coeffs[3], depth_intrins.coeffs[4]};
+    
+    // Mat color(Size(width, height), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
+    // color_ = color;
+    // Mat depth(Size(width, height), CV_16UC1, (void*)depth_frame.get_data(), Mat::AUTO_STEP);
+    // Mat ir(Size(848, 480), CV_8UC1, (void*)ir_frame.get_data(), Mat::AUTO_STEP);
+
+    ros::Subscriber color_sub = nh.subscribe("/robocentric/camera/color_raw", 1000, color_cb);
+    ros::Publisher color_pub = nh.advertise<sensor_msgs::Image>
+            ("camera/blob_detect", 10);
     vector<Vec3f> circles;
-    blur( gray, gray, Size(5,5) );
-    HoughCircles(gray, circles, CV_HOUGH_GRADIENT, 2, 50, 100, 80, 0, 50);
-    cout << "circle size: " << circles.size() << endl;
-    for (size_t i = 0; i < circles.size(); i++)
+    ros::Rate rate(10.0);
+
+    // for (int i = 0; i < 10; i++)
+    // {
+    //     ros::spinOnce();
+    // }
+    while(ros::ok() && write_jpg)
     {
-        Point2f center(circles[i][0],circles[i][1]);
-        float radius = circles[i][2];
-        circle(color, center, radius, Scalar(255, 0, 0), 3, 8, 0);
+        ros::spinOnce();
+        // imshow(OPENCV_WINDOW, color);
+        // blob_detect(0, 0);
+        // imshow(OPENCV_WINDOW, gray_);
+        // waitKey();
+        std_msgs::Header header;
+        cv_bridge::CvImage img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8, color_);
+        sensor_msgs::Image img_msg;
+        img_bridge.toImageMsg(img_msg);
+        color_pub.publish(img_msg);
+        rate.sleep();
     }
+    int i = 0;
+    double total_time = 0.0;
+    while(1)
+    {
+        char temp[64] ;
+        sprintf(temp, "%d", i);
+        string jpg_name = jpg_dir + string(temp) + ".jpg";
+        color = imread(jpg_name, IMREAD_COLOR);
+        cvtColor( color, gray_, COLOR_BGR2GRAY );
+        blur( gray_, gray_, Size(3,3) );
+        // namedWindow( blob_window );
+        double time1 = ros::Time::now().toSec();
+        blob_detect(0, 0);
+        double time2 = ros::Time::now().toSec();
+        total_time += time2 - time1;
+        if (i % 100 == 0)
+        {
+            cout << i << endl;
+            cout << "blob_average time: " << total_time/(i+1) << endl;
+        }
 
-    namedWindow( blob_window );
-    createTrackbar( "blob color:", blob_window, &blobColor, maxblobColor, blob_detect );
-    createTrackbar( "blob minCircularity:", blob_window, &minCircularity, maxCircularity, blob_detect );
-    createTrackbar( "blob minarea:", blob_window, &blobarea, maxblobarea, blob_detect );
-    createTrackbar( "blob minconvexity:", blob_window, &minConvexity, maxConvexity, blob_detect );
-    createTrackbar( "blob minInertiaRatio:", blob_window, &minInertiaRatio, maxInertiaRatio, blob_detect );
-    imshow(blob_window, color);
-    blob_detect(0, 0);
-    // namedWindow("imgCanny blur", CV_WINDOW_AUTOSIZE);
-    // imshow("imgCanny blur", imgcanny_blur);
-    // vector<vector<Point>> contours;
-    // vector<Vec4i> hierarchy;
-    // findContours( imgcanny_blur, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
-    // Mat imgcontour = Mat::zeros(imgcanny_blur.size(), CV_8UC3);
-    // list<int> rectangle_index;
-    // for (size_t i = 0; i < contours.size(); i++)
-    // {   
-    //     approxPolyDP(Mat(contours[i]), contours[i], arcLength(contours[i], true) * 0.02, true);
-    //     if (contours[i].size() == 4)
-    //     {   
-    //         rectangle_index.push_back(i);
-    //         double length_contour = arcLength(contours[i], false);
-    //         // Scalar color = Scalar(100, 100, 100);
-    //         // drawContours( imgcontour, contours, (int)i, color, 1, LINE_8, hierarchy, 0);
-    //         cout << "contour index: " << i << " length: " << length_contour << "hierarchy: " << hierarchy[i] << endl;
-    //     }
-    //     if (contours[i].size() >= 10)
-    //     {   
-    //         Scalar color = Scalar(100, 100, 100);
-    //         // std::cout << "contours size: "<< contours[i].size() <<std::endl;
-    //         drawContours(imgcontour, contours, i, color, 1, LINE_8, hierarchy, 0);
-    //         Point2f center;
-    //         float radius;
-    //         minEnclosingCircle(contours[i], center, radius);
-    //         // cout<< "center: " << center.x << " "<<center.y << " radius:" << radius << endl;
-    //         circle(imgcontour, center, cvRound(radius), Scalar(0,255,0), 1, LINE_AA);
-    //     }
-    // }
-    // list<int> gap_index;
-    // for (list<int>::iterator it = rectangle_index.begin(); it != rectangle_index.end(); it++)
-    // {
-    //     if (hierarchy[*it][2] > 0 && hierarchy[hierarchy[*it][2]][2] > 0 
-    //         && hierarchy[hierarchy[hierarchy[*it][2]][2]][2] > 0 && hierarchy[hierarchy[hierarchy[hierarchy[*it][2]][2]][2]][2] < 0)
-    //     {   
-    //         gap_index.push_back(*it);
-    //         cout << "gap index: " << *it << endl;
-    //     }
-    // }
-    // for (list<int>::iterator it = gap_index.begin(); it != gap_index.end(); it++)
-    // {
-    //     Scalar color = Scalar(100, 100, 100);
-    //     drawContours( imgcontour, contours, (int)*it, color, 1, LINE_8, hierarchy, 0);
-    //     int inner_contour_index = hierarchy[hierarchy[hierarchy[*it][2]][2]][2];
-    //     drawContours( imgcontour, contours, (int)inner_contour_index, color, 1, LINE_8, hierarchy, 0);
-    //     cout << "outer corners: " << contours[*it] << endl;
-    //     cout << "inner corners: " << contours[inner_contour_index] << endl;
-    //     vector<Point2f> out_corners;
-    //     vector<Point2f> in_corners;
-    //     for (int i = 0; i < 4; i ++)
-    //     {
-    //         out_corners.push_back(contours[*it][i]);
-    //         in_corners.push_back(contours[inner_contour_index][i]);
-    //         circle( color_, out_corners[i], radius, Scalar(0, 0, 200), FILLED );
-    //         circle( color_, in_corners[i], radius, Scalar(0, 0, 200), FILLED );
-    //     }
-    //     float out_points[4][3];
-    //     float out_pixels[4][2];
-    //     float in_points[4][3];
-    //     float in_pixels[4][2];
-    //     vector<Point3f> points_vec(0);
-    //     vector<Point2f> pixels_vec(0);
-    //     int range = 5;
-    //     for (int i = 0; i < 4; i++)
-    //     {   
-    //         cout << "origin out corner pixels depth: " << depth_frame.get_distance(out_corners[i].x, out_corners[i].y) << endl;
-    //         cout << "origin in corner pixels depth: " << depth_frame.get_distance(in_corners[i].x, in_corners[i].y) << endl;
-    //         float out_corner_depth = depth_frame.get_distance(out_corners[i].x, out_corners[i].y);
-    //         float in_corner_depth = depth_frame.get_distance(in_corners[i].x, in_corners[i].y);
-    //         for (int j = -range; j < range+1; j++)
-    //         {
-    //             for(int k = -range; k < range+1; k++)
-    //             {
-    //                 float depth_search = depth_frame.get_distance(out_corners[i].x + k, out_corners[i].y + j);
-    //                 if(depth_search > 0.20 && (depth_search < out_corner_depth || out_corner_depth < 0.20))
-    //                 {
-    //                     out_corner_depth = depth_search;
-    //                 }
-    //                 depth_search = depth_frame.get_distance(in_corners[i].x + k, in_corners[i].y + j);
-    //                 if(depth_search > 0.20 && (depth_search < in_corner_depth || in_corner_depth < 0.20))
-    //                 {
-    //                     in_corner_depth = depth_search;
-    //                 }
-    //             }
-    //         }
-    //         cout << "searched out corner pixels depth: " << out_corner_depth << endl;
-    //         cout << "searched in corner pixels depth: " << in_corner_depth << endl;
-    //         out_pixels[i][0] = out_corners[i].x;
-    //         out_pixels[i][1] = out_corners[i].y;
-    //         in_pixels[i][0] = in_corners[i].x;
-    //         in_pixels[i][1] = in_corners[i].y;
-    //         rs2_deproject_pixel_to_point(out_points[i], &depth_intrins, out_pixels[i], out_corner_depth);
-    //         rs2_deproject_pixel_to_point(in_points[i], &depth_intrins, in_pixels[i], in_corner_depth);
-    //         points_vec.push_back(Point3f(out_points[i][0], out_points[i][1], out_points[i][2]));
-    //         points_vec.push_back(Point3f(in_points[i][0], in_points[i][1], in_points[i][2]));
-    //         pixels_vec.push_back(Point2f(out_pixels[i][0], out_pixels[i][1]));
-    //         pixels_vec.push_back(Point2f(in_pixels[i][0], in_pixels[i][1]));
-    //     }
-    //     plane_from_points(points_vec);
-    //     float centroid_pixel[2] = {0, 0};
-    //     rs2_project_point_to_pixel(centroid_pixel, &depth_intrins, centroid_);
-    //     cout << "centroid pixel: " << centroid_pixel[0] << " " << centroid_pixel[1] << endl;
-    //     vector<Point2f> centroid_pixel_(1);
-    //     centroid_pixel_[0] = Point2f(centroid_pixel[0], centroid_pixel[1]);
-    //     circle( color_, centroid_pixel_[0], radius, Scalar(0, 0, 200), FILLED );
-    //     int left_index_o[2] = {10};
-    //     int right_index_o[2] = {10};
-    //     int left_up_index;
-    //     int left_down_index;
-    //     int right_up_index;
-    //     int right_down_index;
-    //     for (int i = 0; i < 4; i++)   // find out quadrangle right and left index
-    //     {
-    //         if (out_corners[i].x < centroid_pixel[0])
-    //         {
-    //             if (left_index_o[0] == 10)
-    //             {
-    //                 left_index_o[0] = i;
-    //             }
-    //             else
-    //             {
-    //                 left_index_o[1] = i;
-    //             }
-    //         }
-    //         else
-    //         {
-    //             if (right_index_o[0] == 10)
-    //             {
-    //                 right_index_o[0] = i;
-    //             }
-    //             else
-    //             {
-    //                 right_index_o[1] = i; 
-    //             }
-    //         }
-    //     }
-    //     if (out_corners[left_index_o[0]].y < out_corners[left_index_o[1]].y) // find out quadrangle left_up_index and left_down_index
-    //     {
-    //         left_up_index = left_index_o[0];
-    //         left_down_index = left_index_o[1];
-    //     }
-    //     else
-    //     {
-    //         left_up_index = left_index_o[1];
-    //         left_down_index = left_index_o[0];
-    //     }
-    //     if (out_corners[right_index_o[0]].y < out_corners[right_index_o[1]].y) // find in quadrangle right_up_index and right_down_index
-    //     {
-    //         right_up_index = right_index_o[0];
-    //         right_down_index = right_index_o[1];
-    //     }
-    //     else
-    //     {
-    //         right_up_index = right_index_o[1];
-    //         right_down_index = right_index_o[0];
-    //     }
-    //     int out_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
-    //     // cout << "out quadrangle index: " << out_quadr_index_[0] << ' ' << out_quadr_index_[1] << ' ' << out_quadr_index_[2] << ' ' << out_quadr_index_[3] << endl;
-        
-    //     int left_index_i[2] = {10};
-    //     int right_index_i[2] = {10};
-    //     for (int i = 0; i < 4; i++)   // find in quadrangle right and left index
-    //     {
-    //         if (in_corners[i].x < centroid_pixel[0])
-    //         {
-    //             if (left_index_i[0] == 10)
-    //             {
-    //                 left_index_i[0] = i;
-    //             }
-    //             else
-    //             {
-    //                 left_index_i[1] = i;
-    //             }
-    //         }
-    //         else
-    //         {
-    //             if (right_index_i[0] == 10)
-    //             {
-    //                 right_index_i[0] = i;
-    //             }
-    //             else
-    //             {
-    //                 right_index_i[1] = i; 
-    //             }
-    //         }
-    //     }
-    //     if (in_corners[left_index_i[0]].y < in_corners[left_index_i[1]].y) // find in quadrangle left_up_index and left_down_index
-    //     {
-    //         left_up_index = left_index_i[0];
-    //         left_down_index = left_index_i[1];
-    //     }
-    //     else
-    //     {
-    //         left_up_index = left_index_i[1];
-    //         left_down_index = left_index_i[0];
-    //     }
-    //     if (in_corners[right_index_i[0]].y < in_corners[right_index_i[1]].y) // find in quadrangle right_up_index and right_down_index
-    //     {
-    //         right_up_index = right_index_i[0];
-    //         right_down_index = right_index_i[1];
-    //     }
-    //     else
-    //     {
-    //         right_up_index = right_index_i[1];
-    //         right_down_index = right_index_i[0];
-    //     }
-    //     int in_quadr_index_[4] = {left_up_index, right_up_index, right_down_index, left_down_index};
-    //     // cout << "in quadrangle index: " << in_quadr_index_[0] << ' ' << in_quadr_index_[1] << ' ' << in_quadr_index_[2] << ' ' << in_quadr_index_[3] << endl;
-    //     vector<Point2f> corners_sort_vec(8);
-    //     for (int i = 0; i < 4; i++)
-    //     {
-    //         corners_sort_vec[i] = out_corners[out_quadr_index_[i]];
-    //         corners_sort_vec[i + 4] = in_corners[in_quadr_index_[i]];
-    //     }
-    //     // float points_ref[8][3] = {{-0.1275f, -0.0845f, 0.0f}, {0.1275f, -0.0845f, 0.0f}, {0.1275f, 0.0845f, 0.0f}, {-0.1275f, 0.0845f, 0.0f},
-    //     //                                         {-0.0975f, -0.0545f, 0.0f}, {0.0975f, -0.0545f, 0.0f}, {0.0975f, 0.0545f, 0.0f}, {-0.0975f, 0.0545f, 0.0f}};
-    //     // vector<Point3f> points_ref_vec(0);
-    //     // for (int i = 0; i < 8; i++)
-    //     // {
-    //     //     points_ref_vec.push_back( Point3f(points_ref[i][0], points_ref[i][1], points_ref[i][2]) );
-    //     // }
-    //     // Mat rvec, tvec;
-    //     // solvePnP(points_ref_vec, corners_sort_vec, cameraMatrix, distCoeffs, rvec, tvec);
-    //     // cv::Matx33f R;
-    //     // Rodrigues(rvec, R);
-    //     // cout << "plane translation: " << tvec << endl;
-    //     // cout << "plane norm direction: " << R.col(2) << endl;
-    //     // float centroid_point_ref[3] = {0};
-    //     // for (int i = 0; i < 3; i++)
-    //     // {
-    //     //     centroid_point_ref[i] = tvec.at<float>(i);
-    //     // }
-    //     // float centroid_pixel_ref[2] = {0};
-    //     // rs2_project_point_to_pixel(centroid_pixel_ref, &depth_intrins, centroid_point_ref);
-    //     // vector<Point2f> centroid_pixel_ref_vec(1);
-    //     // centroid_pixel_ref_vec[0] = Point2f(centroid_pixel_ref[0], centroid_pixel_ref[1]);
-    //     // cout << "centroid piexl from reference: " << centroid_pixel_ref_vec[0] << endl;
-    //     // circle( color_, centroid_pixel_ref_vec[0], radius, Scalar(150, 0, 0), FILLED);
-    //     // rs2_extrinsics plane_extrin;
-    //     // for(int i = 0; i < 3; i++)
-    //     // {
-    //     //     for (int j = 0; j < 3; j++)
-    //     //     {
-    //     //         plane_extrin.rotation[i * 3 + j] = R(j,i);
-    //     //     }
-    //     // }
-    //     // for (int i = 0; i < 3; i++)
-    //     // {
-    //     //     plane_extrin.translation[i] = tvec.at<float>(i);
-    //     // }
-    //     // float points_camera[8][3] = {0};
-    //     // float pixels_camera[8][2] = {0};
-    //     // vector<Point2f> pixels_camera_vec(8);
-    //     // // for (int i = 0; i < 4; i++)
-    //     // // {
-    //     // //     cout << "point from depth: " << points[out_quadr_index[i]][0] << " " << points[out_quadr_index[i]][1] << " " << points[out_quadr_index[i]][2] << endl;
-    //     // // }
-    //     // // for (int i = 0; i < 4; i++)
-    //     // // {
-    //     // //     cout << "point from depth: " << points[in_quadr_index[i]][0] << " " << points[in_quadr_index[i]][1] << " " << points[in_quadr_index[i]][2] << endl;
-    //     // // }
-    //     // for (int i = 0; i < 8; i++)
-    //     // {
-    //     //     rs2_transform_point_to_point(points_camera[i], &plane_extrin, points_ref[i]);
-    //     //     // cout << "point from refer: " << points_camera[i][0] << " " << points_camera[i][1] << " " << points_camera[i][2] << endl;
-    //     //     rs2_project_point_to_pixel(pixels_camera[i], &depth_intrins, points_camera[i]);
-    //     //     pixels_camera_vec[i] = Point2f(pixels_camera[i][0], pixels_camera[i][1]);
-    //     //     circle( color_, pixels_camera_vec[i], radius, Scalar(200, 0, 0), FILLED);
-    //     // }
-    // }
-    // namedWindow("imgContour", CV_WINDOW_AUTOSIZE);
-    // imshow("imgContour", imgcontour);
-    // namedWindow( source_window );
-    // imshow( source_window, color_);
-    // // cv::cvtColor(color, color, COLOR_RGB2BGR);
-
-    // // Apply Histogram Equalization
-    // Mat depth_new;
-    // Mat depth_nnew;
-    // // equalizeHist( depth, depth_new);
-    // depth.convertTo(depth_new, CV_8UC1, 0.1, 0); 
-    // // applyColorMap(depth_new, depth_nnew, COLORMAP_JET);
-    // // depth.convertTo(depth_new, CV_8UC1, 1, 0); 
-    // // namedWindow("DISPLAY IMAGE", WINDOW_AUTOSIZE);
-    // namedWindow("DISPLAY IMAGE NEW", WINDOW_AUTOSIZE);
-    // // imshow("DISPLAY IMAGE", depth_nnew);
-    // imshow("DISPLAY IMAGE NEW", depth_new);
-
-
-    // namedWindow( source_window );
-    // // createTrackbar( "Max corners:", source_window, &maxCorners, maxTrackbar, goodFeaturesToTrack_Demo );
-    // imshow( source_window, color );
-
-    // goodFeaturesToTrack_Demo( 0, 0 );
-    // // Mat rvec, tvec;
-    // // solvePnP(points_vec, pixels_vec, cameraMatrix, distCoeffs, rvec, tvec);
-    // // cv::Matx33f R;
-    // // Rodrigues(rvec, R);
-    // float distance[8] = {0};
-    // float distance_sort[8] = {0};
-    // for (int i = 0; i < corners_.size(); i++)
-    // {
-    //     distance[i] = sqrt(pow(points_vec[i].x - centroid_[0], 2) +  pow(points_vec[i].y - centroid_[1], 2) + pow(points_vec[i].z - centroid_[2], 2));
-    //     distance_sort[i] = distance[i];
-    //     cout << "distance from center: " << distance[i] << endl;
-    // }
-    // sort(distance_sort, distance_sort + 8);
-    // int in_quadr_index[4] = {0};
-    // int out_quadr_index[4] = {0};
-    // for (int i = 0; i < 4; i++) // find in_quadr_index
-    // {   
-    //     int j = 0;
-    //     while (1)
-    //     {
-    //         if (abs(distance_sort[i] - distance[j]) < 1e-8f)
-    //         {
-    //             in_quadr_index[i] = j;
-    //             cout << "in index: " << j << endl;
-    //             break;
-    //         }
-    //         j++;   
-    //     }
-    // }
-    // for (int i = 0; i < 4; i++) // find out_quadr_index
-    // {
-    //     int j = 0;
-    //     while(1)
-    //     {
-    //         if (abs(distance_sort[7-i] - distance[j]) < 1e-8f)
-    //         {
-    //             out_quadr_index[i] = j;
-    //             cout << "out index: " << j << endl;
-    //             break;
-    //         }
-    //         j++;
-    //     }
-    // } 
-    waitKey(0);
+        // createTrackbar( "blob color:", blob_window, &blobColor, maxblobColor, blob_detect );
+        // createTrackbar( "blob minCircularity:", blob_window, &minCircularity, maxCircularity, blob_detect );
+        // createTrackbar( "blob minarea:", blob_window, &blobarea, maxblobarea, blob_detect );
+        // createTrackbar( "blob minconvexity:", blob_window, &minConvexity, maxConvexity, blob_detect );
+        // createTrackbar( "blob minInertiaRatio:", blob_window, &minInertiaRatio, maxInertiaRatio, blob_detect );
+        // imshow(blob_window, color); 
+        // blob_detect(0, 0);
+        char key = (char)waitKey();
+        if (key == '0')
+        {
+            break;
+        }
+        else if (key == '2')
+        {   
+            i--;
+        }
+        else if(key == '1')
+        {   
+            i++;
+        }
+        // i++;    
+    }
+    
     return 0;
 }

@@ -88,10 +88,14 @@ int main(int argc, char* argv[])
     ros::spinOnce();
     state init_state;
     esekfom::esekf<state, process_noise_dof, input, measurement, measurement::DOF>::cov init_P = 1 * Eigen::MatrixXd::Identity(state::DOF, state::DOF);
+    for (int i = state::DOF - 9; i < state::DOF - 6; i++)
+    {
+        init_P(i,i) = 0.01;
+    }
     for (int i = state::DOF - 6; i < state::DOF; i++)
     {
-        init_P(i,i) = 0.001;
-        // init_P(i,i) = 0.0;
+        // init_P(i,i) = 0.0001;
+        init_P(i,i) = 0.0;
     }
     esekfom::esekf<state, process_noise_dof, input, measurement, measurement::DOF> kf;
     double last_predict_time = -1;
@@ -185,7 +189,7 @@ int main(int argc, char* argv[])
         }
         while (!imu_buffer.empty() && imu_buffer.front()->header.stamp.toSec() - last_predict_time < 0)
         {
-            std::cout << "delta t: " << imu_buffer.front()->header.stamp.toSec() - last_predict_time << std::endl;
+            // std::cout << "delta t: " << imu_buffer.front()->header.stamp.toSec() - last_predict_time << std::endl;
             imu_buffer.pop_front();
         }
         if(flg_state_init && flg_predict_init && !imu_buffer.empty() && imu_buffer.front()->header.stamp.toSec() - last_predict_time > 0)
@@ -216,7 +220,7 @@ int main(int argc, char* argv[])
         }      
         mtx_buffer.unlock(); 
         double pub_time_now = ros::Time::now().toSec();
-        if (flg_state_init && (pub_time_now - pub_time_last >= 0.01))
+        if (flg_state_init && (pub_time_now - pub_time_last >= 0.02))
         {   
             state s = kf.get_x();
             pose.header.stamp = ros::Time::now();

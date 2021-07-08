@@ -3,6 +3,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/PointStamped.h>
+#include <geometry_msgs/TwistStamped.h>
 #include <sensor_msgs/Imu.h>
 #include "vision_detect.hpp"
 #include <cv_bridge/cv_bridge.h>
@@ -13,10 +14,13 @@
 
 geometry_msgs::PoseArray gap_array;
 geometry_msgs::PoseStamped aircraft_pose;
+geometry_msgs::TwistStamped aircraft_vel;
 geometry_msgs::PoseStamped corner1;
 geometry_msgs::PoseStamped corner2;
 geometry_msgs::PoseStamped corner3;
 geometry_msgs::PoseStamped corner4;
+geometry_msgs::PoseStamped ball_pos;
+geometry_msgs::TwistStamped ball_vel;
 sensor_msgs::Imu Imu;
 Eigen::Quaternionf q_aircraft;
 
@@ -41,9 +45,24 @@ void corner4_cb(const geometry_msgs::PoseStamped::ConstPtr &msg)
     corner4 = *msg;
 }
 
+void ball_pos_cb(const geometry_msgs::PoseStamped::ConstPtr &msg)
+{
+    ball_pos = *msg;
+}
+
+void ball_vel_cb(const geometry_msgs::TwistStamped::ConstPtr &msg)
+{
+    ball_vel = *msg;
+}
+
 void aircraft_cb(const geometry_msgs::PoseStamped::ConstPtr &msg)
 {
     aircraft_pose = *msg;
+}
+
+void aircraft_vel_cb(const geometry_msgs::TwistStamped::ConstPtr &msg)
+{
+    aircraft_vel = *msg;
 }
 
 void aircraft_q_cb(const sensor_msgs::Imu::ConstPtr &msg)
@@ -65,11 +84,18 @@ int main(int argc, char* argv[])
             ("/robocentric/camera/gap_pose", 100);
     ros::Publisher vision_pose_pub = nh.advertise<geometry_msgs::PoseStamped>
             ("/mavros/vision_pose/pose", 100);
+    ros::Publisher ball_pos_pub = nh.advertise<geometry_msgs::PoseStamped>
+            ("/robocentric/vicon/ball_pos", 100);   
+    ros::Publisher ball_vel_pub = nh.advertise<geometry_msgs::TwistStamped>
+            ("/robocentric/vicon/ball_vel", 100);           
     ros::Subscriber corner1_sub = nh.subscribe("/corner1/viconros/mocap/pos", 1000, corner1_cb);
     ros::Subscriber corner2_sub = nh.subscribe("/corner2/viconros/mocap/pos", 1000, corner2_cb);
     ros::Subscriber corner3_sub = nh.subscribe("/corner3/viconros/mocap/pos", 1000, corner3_cb);
     ros::Subscriber corner4_sub = nh.subscribe("/corner4/viconros/mocap/pos", 1000, corner4_cb);
     ros::Subscriber aircraft_sub = nh.subscribe("/aircraft/viconros/mocap/pos", 1000, aircraft_cb);
+    ros::Subscriber aircraft_vel_sub = nh.subscribe("/aircraft/viconros/mocap/vel", 1000, aircraft_vel_cb);
+    ros::Subscriber ball_pos_sub = nh.subscribe("/yh_ball/viconros/mocap/pos", 1000, ball_pos_cb);
+    ros::Subscriber ball_vel_sub = nh.subscribe("/yh_ball/viconros/mocap/vel", 1000, ball_vel_cb);
     ros::Subscriber aircraft_q_sub = nh.subscribe("/mavros/imu/data", 1000, aircraft_q_cb);
     ros::Rate rate(50.0);
     for(int i = 0; i < 10; i++)
@@ -108,18 +134,26 @@ int main(int argc, char* argv[])
         // std::cout << "R_gap" << R_gap << std::endl;
 	    Eigen::Quaternionf q_gap(R_gap);        
 	//std::cout << "q_gap: " << q_gap.x() << " " << q_gap.y() << " " << q_gap.z() << " " << q_gap.w() << std::endl;
-	    Eigen::Matrix<float, 3, 3> R_aircraft;
+	    
+        Eigen::Matrix<float, 3, 1> P_b_r = {(float)ball_pos.pose.position.x - (float)aircraft_pose.pose.position.x, (float)ball_pos.pose.position.y - (float)aircraft_pose.pose.position.y, (float)ball_pos.pose.position.z - (float)aircraft_pose.pose.position.z};
+        Eigen::Matrix<float, 3, 1> V_b_r = {(float)ball_vel.twist.linear.x - (float)aircraft_vel.twist.linear.x, (float)ball_vel.twist.linear.y - (float)aircraft_vel.twist.linear.y, (float)ball_vel.twist.linear.z - (float)aircraft_vel.twist.linear.z};
+        V_b_r = -V_b_r;
+
+        Eigen::Matrix<float, 3, 3> R_aircraft;
         R_aircraft = q_aircraft.toRotationMatrix();
         R_aircraft.block(0,0,3,1) = R_aircraft.block(0,0,3,1);
         R_aircraft.block(0,1,3,1) =  R_aircraft.block(0,1,3,1);
         R_aircraft.block(0,2,3,1) =  R_aircraft.block(0,2,3,1);
         Eigen::Matrix<float, 3, 3> R_b_r = R_aircraft.transpose() * R_gap;
         // std::cout << "R_b_r: " << R_b_r.block(0,0,3,1) << std::endl;
-	    Eigen::Matrix<float, 3, 1> P_b_r = {centroid[0] - (float)aircraft_pose.pose.position.x, centroid[1] - (float)aircraft_pose.pose.position.y, centroid[2] - (float)aircraft_pose.pose.position.z};
+	    // Eigen::Matrix<float, 3, 1> P_b_r = {centroid[0] - (float)aircraft_pose.pose.position.x, centroid[1] - (float)aircraft_pose.pose.position.y, centroid[2] - (float)aircraft_pose.pose.position.z};
+        Eigen::Matrix<float, 3, 1> P1_b_r = {(float)corner1.pose.position.x - (float)aircraft_pose.pose.position.x, (float)corner1.pose.position.y - (float)aircraft_pose.pose.position.y, (float)corner1.pose.position.z - (float)aircraft_pose.pose.position.z};
         Eigen::Matrix<float, 3, 1> P2_b_r = {(float)corner2.pose.position.x - (float)aircraft_pose.pose.position.x, (float)corner2.pose.position.y - (float)aircraft_pose.pose.position.y, (float)corner2.pose.position.z - (float)aircraft_pose.pose.position.z};
          //std::cout << "P_b_r " << P_b_r << std::endl;
         //std::cout << "R_aircraft: " << R_aircraft << std::endl;
         P_b_r = R_aircraft.transpose() * P_b_r;
+        V_b_r = R_aircraft.transpose() * V_b_r;
+        P1_b_r = R_aircraft.transpose() * P1_b_r;
         P2_b_r = R_aircraft.transpose() * P2_b_r;
         //std::cout << "R_b_r " << R_b_r << std::endl;
         R_aircraft.block(0,0,3,1) = ENU_2_NED(R_aircraft.block(0,0,3,1));
@@ -130,14 +164,28 @@ int main(int argc, char* argv[])
 	    R_gap.block(0,2,3,1) = -ENU_2_NED(R_gap.block(0,2,3,1));
 	    R_b_r = R_aircraft.transpose() * R_gap;	    
 	    P_b_r = FLU_2_FRD(P_b_r);
+        V_b_r = FLU_2_FRD(V_b_r);
+        P1_b_r = FLU_2_FRD(P1_b_r);
         P2_b_r = FLU_2_FRD(P2_b_r);
         Eigen::Quaternionf q_b_r(R_b_r);
+        geometry_msgs::PoseStamped rela_ball_pos;
+        geometry_msgs::TwistStamped rela_ball_vel;
+        rela_ball_pos.header.stamp = ros::Time::now();
+        rela_ball_vel.header.stamp = ros::Time::now();
+        rela_ball_pos.pose.position.x = P_b_r[0];
+        rela_ball_pos.pose.position.y = P_b_r[1];
+        rela_ball_pos.pose.position.z = P_b_r[2];
+        rela_ball_vel.twist.linear.x = V_b_r[0];
+        rela_ball_vel.twist.linear.y = V_b_r[1];
+        rela_ball_vel.twist.linear.z = V_b_r[2];
+        ball_pos_pub.publish(rela_ball_pos);
+        ball_vel_pub.publish(rela_ball_vel);
         geometry_msgs::Pose gap_pose;
         gap_array.header.stamp = ros::Time::now();
         gap_array.header.frame_id = "FRD";
-        gap_pose.position.x = P_b_r[0];
-        gap_pose.position.y = P_b_r[1];
-        gap_pose.position.z = P_b_r[2];
+        gap_pose.position.x = P1_b_r[0];
+        gap_pose.position.y = P1_b_r[1];
+        gap_pose.position.z = P1_b_r[2];
         gap_pose.orientation.x = q_b_r.x();
         gap_pose.orientation.y = q_b_r.y();
         gap_pose.orientation.z = q_b_r.z();

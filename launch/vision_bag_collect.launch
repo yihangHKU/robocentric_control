@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<launch>
+  <node  pkg="robocentric_control" type="vision_detect" name="vision_detect_node" output="screen" />
+  <node  pkg="rosbag" type="record" name="record" output="screen" args="-o /home/dji/catkin_ws/rosbag/robocen /robocentric/camera/gap_pose2 /robocentric/camera/gap_pose /robocentric/camera/color_raw" />
+
+</launch>

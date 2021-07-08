@@ -187,13 +187,14 @@ void remove_background(rs2::video_frame& other_frame, const rs2::depth_frame& de
         }
     }
 }
+
 bool blob_detect_init(Ptr<SimpleBlobDetector> &detector)
 {
     int blobColor = 255;
     float minCircularity = 0.8;
-    int blobarea = 60;
-    float minConvexity = 0.72;
-    float minInertiaRatio = 0.8;
+    int blobarea = 100;
+    float minConvexity = 0.85;
+    float minInertiaRatio = 0.65;
     // Setup SimpleBlobDetector parameters.
     SimpleBlobDetector::Params params;
     // Change thresholds
@@ -226,9 +227,9 @@ void blob_detect(Ptr<SimpleBlobDetector> &detector, Mat &gray, Mat &src, rs2::de
     vector<KeyPoint> keypoints;
     rs2_intrinsics depth_intrins = rs2::video_stream_profile(depth_frame.get_profile()).get_intrinsics();
     // You can use the detector this way
-    double time2 = ros::Time::now().toSec();
+    // double time2 = ros::Time::now().toSec();
     detector->detect( gray, keypoints);
-    double time3 = ros::Time::now().toSec();
+    // double time3 = ros::Time::now().toSec();
     // namedWindow(blob_window);
     // std::cout << keypoints.size() << std::endl; 
     // Mat blob_image;
@@ -251,7 +252,7 @@ void blob_detect(Ptr<SimpleBlobDetector> &detector, Mat &gray, Mat &src, rs2::de
         }
     }
     // std::cout << "4-1:" << time4-time1<<std::endl;
-    std::cout << "3-2:" << time3-time2<<std::endl;
+    // std::cout << "3-2:" << time3-time2<<std::endl;
     // imshow(blob_window, blob_image);
 }
 

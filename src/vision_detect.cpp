@@ -70,7 +70,7 @@ int main(int argc, char* argv[])
     // rs2::pipeline_profile profile = pipe.start();
     rs2::frameset frames;
     rs2::align align_to_depth(RS2_STREAM_DEPTH);
-    ros::Rate rate(50.0);
+    ros::Rate rate(100.0);
     // time_t t;
     // tm* local;
     // char buf[128] = {0};
@@ -80,6 +80,7 @@ int main(int argc, char* argv[])
     fout_vision.open("/home/yihang/catkin_ws/debug/mat_vision.txt", std::ios::out);
     fout_depth.open("/home/yihang/catkin_ws/debug/mat_depth.txt", std::ios::out);
     Eigen::Matrix<float, 3, 1> last_pub_P{0.0, 0.0, 0.0};
+    Eigen::Matrix<float, 3, 1> last_pub_P2{0.0, 0.0, 0.0};
     for(int i = 0; i < 10; i++)
     {
         frames = pipe.wait_for_frames();
@@ -91,10 +92,10 @@ int main(int argc, char* argv[])
     rs2::align align_to_color(RS2_STREAM_COLOR);
     while(ros::ok()){ 
         frames = pipe.wait_for_frames();
-        double begin = ros::Time::now().toSec();
+        // double begin = ros::Time::now().toSec();
         frames = align_to_color.process(frames);
-        double end = ros::Time::now().toSec();
-        std::cout << "align time: " << end - begin << std::endl;
+        // double end = ros::Time::now().toSec();
+        // std::cout << "align time: " << end - begin << std::endl;
         rs2::video_frame color_frame = frames.get_color_frame();
         rs2::depth_frame depth_frame = frames.get_depth_frame();
         // remove_background(color_frame, depth_frame, 0.001, depth_clipping_distance);
@@ -131,7 +132,7 @@ int main(int argc, char* argv[])
         {   
             blob_init = blob_detect_init(detector);
         }
-        blob_detect(detector, gray, color_, depth_frame);
+        // blob_detect(detector, gray, color_, depth_frame);
 
         // gap detection 
         // depth_error = gap_detect(gray, depth_frame, color_);
@@ -196,86 +197,59 @@ int main(int argc, char* argv[])
             last_pub_P = pub_P;
         }
         else if (!P_buffer.empty())
-        {
-            Eigen::Matrix<float, 3, 1> pub_P = P_buffer[0];
-            P_buffer.clear();
-            if((last_pub_P.norm() < 0.01 || (last_pub_P - pub_P).norm()< 0.6) && pub_P.norm() > 0.5)
+        {   
+            // std::cout << "P_buffer size: " << P_buffer.size() << std::endl;
+            if (P_buffer.size() == 1)
             {
-                gap_pose.pose.position.x = pub_P[0];
-                gap_pose.pose.position.y = pub_P[1];
-                gap_pose.pose.position.z = pub_P[2];
-                gap_array.poses.push_back(gap_pose.pose);
-                gap_array.header.stamp = ros::Time::now();
-                gap_pose_pub.publish(gap_array); 
-                gap_array.poses.clear();
-                last_pub_P = pub_P;
+                Eigen::Matrix<float, 3, 1> pub_P = P_buffer[0];
+                // if((last_pub_P.norm() < 0.01 || (last_pub_P - pub_P).norm()< 0.6) && pub_P.norm() > 0.2)
+                // {
+                    gap_pose.pose.position.x = pub_P[0];
+                    gap_pose.pose.position.y = pub_P[1];
+                    gap_pose.pose.position.z = pub_P[2];
+                    gap_array.poses.push_back(gap_pose.pose);
+                    gap_array.header.stamp = ros::Time::now();
+                    gap_pose_pub.publish(gap_array); 
+                    gap_array.poses.clear();
+                    last_pub_P = pub_P;
+                // }
             }
+            if(P_buffer.size() == 2)
+            {
+                Eigen::Matrix<float, 3, 1> pub_P1 = P_buffer[0];
+                Eigen::Matrix<float, 3, 1> pub_P2 = P_buffer[1];
+                int i;
+                int j;
+                if (P_buffer[1][1] > P_buffer[0][1])
+                {
+                    i = 0;
+                    j = 1;
+                }
+                else
+                {
+                    i = 1;
+                    j = 0;
+                }
+                if ((last_pub_P.norm() < 0.01 || (last_pub_P - P_buffer[i]).norm()< 0.6) && (last_pub_P2.norm() < 0.01 || (last_pub_P2 - P_buffer[j]).norm()< 0.6) && P_buffer[i].norm() > 0.5 && P_buffer[j].norm() > 0.5)
+                {    
+                    gap_pose.pose.position.x = P_buffer[i][0];
+                    gap_pose.pose.position.y = P_buffer[i][1];
+                    gap_pose.pose.position.z = P_buffer[i][2];
+                    gap_array.poses.push_back(gap_pose.pose);
+                    gap_pose.pose.position.x = P_buffer[j][0];
+                    gap_pose.pose.position.y = P_buffer[j][1];
+                    gap_pose.pose.position.z = P_buffer[j][2];
+                    gap_array.poses.push_back(gap_pose.pose);
+                    gap_array.header.stamp = ros::Time::now();
+                    gap_pose_pub.publish(gap_array); 
+                    gap_array.poses.clear();
+                    last_pub_P = P_buffer[i];
+                    last_pub_P2 = P_buffer[j];
+                }
+            }
+            P_buffer.clear();
         }
         
-        
-            
-            // vector<Point2f> corners_sort_vec(8);
-            // for (int i = 0; i < 4; i++)
-            // {
-            //     corners_sort_vec[i] = out_corners[out_quadr_index_[i]];
-            //     corners_sort_vec[i + 4] = in_corners[in_quadr_index_[i]];
-            // }
-            // float points_ref[8][3] = {{-0.1275f, -0.0845f, 0.0f}, {0.1275f, -0.0845f, 0.0f}, {0.1275f, 0.0845f, 0.0f}, {-0.1275f, 0.0845f, 0.0f},
-            //                                         {-0.0975f, -0.0545f, 0.0f}, {0.0975f, -0.0545f, 0.0f}, {0.0975f, 0.0545f, 0.0f}, {-0.0975f, 0.0545f, 0.0f}};
-            // vector<Point3f> points_ref_vec(0);
-            // for (int i = 0; i < 8; i++)
-            // {
-            //     points_ref_vec.push_back( Point3f(points_ref[i][0], points_ref[i][1], points_ref[i][2]) );
-            // }
-            // Mat rvec, tvec;
-            // solvePnP(points_ref_vec, corners_sort_vec, cameraMatrix, distCoeffs, rvec, tvec);
-
-            // cv::Matx33f R;
-            // Rodrigues(rvec, R);
-            // // cout << "plane translation: " << tvec << endl;
-            // // cout << "plane norm direction: " << R.col(2) << endl;
-            // float centroid_point_ref[3] = {0};
-            // for (int i = 0; i < 3; i++)
-            // {
-            //     centroid_point_ref[i] = tvec.at<float>(i);
-            // }
-            // float centroid_pixel_ref[2] = {0};
-            // rs2_project_point_to_pixel(centroid_pixel_ref, &depth_intrins, centroid_point_ref);
-            // vector<Point2f> centroid_pixel_ref_vec(1);
-            // centroid_pixel_ref_vec[0] = Point2f(centroid_pixel_ref[0], centroid_pixel_ref[1]);
-            // // cout << "centroid piexl from reference: " << centroid_pixel_ref_vec[0] << endl;
-            // circle( color_, centroid_pixel_ref_vec[0], radius, Scalar(150, 0, 0), CV_FILLED);
-            // rs2_extrinsics plane_extrin;
-            // for(int i = 0; i < 3; i++)
-            // {
-            //     for (int j = 0; j < 3; j++)
-            //     {
-            //         plane_extrin.rotation[i * 3 + j] = R(j,i);
-            //     }
-            // }
-            // for (int i = 0; i < 3; i++)
-            // {
-            //     plane_extrin.translation[i] = tvec.at<float>(i);
-            // }
-            // float points_camera[8][3] = {0};
-            // float pixels_camera[8][2] = {0};
-            // vector<Point2f> pixels_camera_vec(8);
-            // // for (int i = 0; i < 4; i++)
-            // // {
-            // //     cout << "point from depth: " << points[out_quadr_index[i]][0] << " " << points[out_quadr_index[i]][1] << " " << points[out_quadr_index[i]][2] << endl;
-            // // }
-            // // for (int i = 0; i < 4; i++)
-            // // {
-            // //     cout << "point from depth: " << points[in_quadr_index[i]][0] << " " << points[in_quadr_index[i]][1] << " " << points[in_quadr_index[i]][2] << endl;
-            // // }
-            // for (int i = 0; i < 8; i++)
-            // {
-            //     rs2_transform_point_to_point(points_camera[i], &plane_extrin, points_ref[i]);
-            //     // cout << "point from refer: " << points_camera[i][0] << " " << points_camera[i][1] << " " << points_camera[i][2] << endl;
-            //     rs2_project_point_to_pixel(pixels_camera[i], &depth_intrins, points_camera[i]);
-            //     pixels_camera_vec[i] = Point2f(pixels_camera[i][0], pixels_camera[i][1]);
-            //     circle( color_, pixels_camera_vec[i], radius, Scalar(200, 0, 0), CV_FILLED);
-            // }
         rate.sleep();
     }
     // namedWindow("imgContour", CV_WINDOW_AUTOSIZE);

@@ -2,5 +2,6 @@
 <launch>
   <node  pkg="robocentric_control" type="state_estim" name="state_estim_node" output="screen" />
   <node  pkg="offboard" type="offboard_node" name="offboard_node" output="screen" />
+  <node  pkg="rosbag" type="record" name="record" output="screen" args="-o /home/dji/catkin_ws/rosbag/robocen /robocentric/camera/gap_pose2 /robocentric/camera/gap_pose /mavros/imu/data /mavros/imu/data_raw /robocentric/vicon/ball_pos /robocentric/vicon/ball_vel /mavros/state /robocentric/gravity /robocentric/line /robocentric/pose /robocentric/velocity" />
 
 </launch>
