@@ -18,6 +18,13 @@ vector<Eigen::Matrix<float, 3, 1>> P_buffer;
 vector<Eigen::Matrix<float, 3, 1>> P2_buffer;
 vector<Eigen::Quaternionf> q_buffer;
 
+struct target_point_t
+{
+    KeyPoint kp;
+    float depth;
+    Eigen::Vector3f point;
+};
+
 float points_distance(float points1[3], float points2[3])
 {
     return sqrt(pow(points1[0] - points2[0], 2) + pow(points1[1] - points2[1], 2) + pow(points1[2] - points2[2], 2));
@@ -188,13 +195,13 @@ void remove_background(rs2::video_frame& other_frame, const rs2::depth_frame& de
     }
 }
 
-bool blob_detect_init(Ptr<SimpleBlobDetector> &detector)
+void blob_detect_init(Ptr<SimpleBlobDetector> &detector)
 {
     int blobColor = 255;
     float minCircularity = 0.8;
     int blobarea = 100;
     float minConvexity = 0.85;
-    float minInertiaRatio = 0.65;
+    float minInertiaRatio = 0.30;
     // Setup SimpleBlobDetector parameters.
     SimpleBlobDetector::Params params;
     // Change thresholds
@@ -219,7 +226,6 @@ bool blob_detect_init(Ptr<SimpleBlobDetector> &detector)
     // Set up detector with params
     // SimpleBlobDetector detector(params);
     detector = SimpleBlobDetector::create(params);
-    return true;
 }
 
 void blob_detect(Ptr<SimpleBlobDetector> &detector, Mat &gray, Mat &src, rs2::depth_frame &depth_frame)
@@ -254,6 +260,52 @@ void blob_detect(Ptr<SimpleBlobDetector> &detector, Mat &gray, Mat &src, rs2::de
     // std::cout << "4-1:" << time4-time1<<std::endl;
     // std::cout << "3-2:" << time3-time2<<std::endl;
     // imshow(blob_window, blob_image);
+}
+
+void get_depth(Mat &src, rs2::depth_frame &depth_frame, target_point_t &target_point)
+{
+    rs2_intrinsics depth_intrins = rs2::video_stream_profile(depth_frame.get_profile()).get_intrinsics();
+    float points[3];
+    float pixels[2] = {target_point.kp.pt.x, target_point.kp.pt.y}; 
+    target_point.depth = depth_frame.get_distance(target_point.kp.pt.x, target_point.kp.pt.y);
+    rs2_deproject_pixel_to_point(points, &depth_intrins, pixels, target_point.depth);
+    vector<float> circle_center = {points[0], points[1], points[2]};
+    circle_center = RDF_2_FRD(circle_center);
+    target_point.point = {circle_center[0], circle_center[1], circle_center[2]};
+
+    char num[5];
+    sprintf(num, "%.2f", target_point.depth);
+    target_point.kp.pt.y += 9;
+    cv::putText(src,string(num), target_point.kp.pt,cv::FONT_HERSHEY_DUPLEX,0.4,cv::Scalar(255,50,0),1,true);
+    target_point.kp.pt.y -= 9;
+}
+
+bool nearest_pixel_find(KeyPoint &last_kp, vector<KeyPoint> &keypoints, float minsize)
+{
+    int i = 0;
+    int min_pos = 0;
+    float distance_min = sqrt(pow(last_kp.pt.x - keypoints.at(0).pt.x, 2) + pow(last_kp.pt.y - keypoints.at(0).pt.y, 2));
+    for (i = 1; i < keypoints.size(); i++)
+    {   
+        float distance = sqrt(pow(last_kp.pt.x - keypoints.at(i).pt.x, 2) + pow(last_kp.pt.y - keypoints.at(i).pt.y, 2));
+        if(distance_min > distance)
+        {
+            distance_min = distance;
+            min_pos = i;
+        }
+    }
+    if (keypoints.at(min_pos).size < 2 * minsize && distance_min < 100.0f)
+    {
+        last_kp = keypoints.at(min_pos);
+        keypoints.erase(keypoints.begin() + min_pos);
+        return true;
+    } 
+    else
+    {
+        cout << "distance: " << distance_min << endl;
+        cout << "keypoint size: " << keypoints.at(min_pos).size << endl;
+        return false;
+    }
 }
 
 bool gap_detect(Mat &gray, rs2::depth_frame &depth_frame, Mat &color_)

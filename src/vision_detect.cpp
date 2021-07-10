@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <iostream>
+#include <thread>
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/Image.h>
@@ -27,27 +28,122 @@ const char* corners_window = "Corners detected";
 Mat color_, gray_;
 bool blob_init = false;
 Ptr<SimpleBlobDetector> detector;
+bool detect_init = false;
+bool target_update = false;
+bool obstacle_update = false;
+target_point_t targets[2];
+target_point_t obstacle;
 
 sensor_msgs::Image color_frame;
 sensor_msgs::Image depth_frame;
 sensor_msgs::CameraInfo color_info;
 geometry_msgs::PoseArray gap_array;
 geometry_msgs::PoseStamped gap_pose;
+geometry_msgs::PoseStamped obs_pose;
 
+rs2::frameset frames;
+rs2::align align_to_color(RS2_STREAM_COLOR);
 
-// void color_cb(const sensor_msgs::Image::ConstPtr &msg)
-// {
-//     cv_bridge::CvImagePtr cv_ptr;
-//     try
-//     {
-//        cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-//     }
-//     catch (cv_bridge::Exception& e)
-//     {
-//         ROS_ERROR("cv_bridge exception: %s", e.what());
-//         return;
-//     }
-// }
+void align_fun()
+{   
+    // cout << "align fun begin" << endl;
+    frames = align_to_color.process(frames);
+    // cout << "align fun end" << endl;
+}
+
+void blob_detect_fun()
+{   
+    target_update = false;
+    obstacle_update = false;
+    vector<KeyPoint> keypoints; 
+    cvtColor( color_, gray_, COLOR_BGR2GRAY );
+    blur( gray_, gray_, Size(3,3) );
+    detector->detect( gray_, keypoints);
+        // namedWindow(blob_window);
+    // std::cout << keypoints.size() << std::endl;
+        // detector.detect( gray, keypoints);
+    drawKeypoints( color_, keypoints, color_, Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
+        // Canny(gray, imgcanny_blur, 100, 200, 3, true);
+    if (!detect_init)
+    {
+        if (keypoints.size() == 2 && sqrt(pow(keypoints.at(0).pt.x - keypoints.at(1).pt.x, 2) + pow(keypoints.at(0).pt.y - keypoints.at(1).pt.y, 2)) < 100.0f)
+        {
+            if (keypoints.at(0).pt.x < keypoints.at(1).pt.x)
+            {
+                targets[0].kp = keypoints.at(0);
+                targets[1].kp = keypoints.at(1);
+            }
+            else
+            {
+                targets[0].kp = keypoints.at(1);
+                targets[1].kp = keypoints.at(0);
+            }  
+            keypoints.clear();
+            detect_init = true; 
+            target_update = true;
+            for (int i = 0; i < 2; i++)
+            {
+                char num[1];
+                sprintf(num, "%d", i);
+                cv::putText(color_,string(num),targets[i].kp.pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+            }
+            cout << "detect init" << endl;  
+        }
+        else
+        {
+            // cout << "detect init error" << endl;
+        }
+    }
+    else if (keypoints.size() >= 2)
+    {   
+        float min_size = min(targets[0].kp.size, targets[1].kp.size);
+        bool kp_match = true;
+        for (int i = 0; i < 2; i++)
+        {
+            kp_match = kp_match && nearest_pixel_find(targets[i].kp, keypoints, min_size);
+        }
+        if (kp_match)
+        {
+            if(targets[0].kp.pt.x > targets[1].kp.pt.x)
+            {   
+                KeyPoint middle = targets[0].kp;
+                targets[0].kp = targets[1].kp;
+                targets[1].kp = middle;
+            }
+            for (int i = 0; i < 2; i++)
+            {
+                char num[1];
+                sprintf(num, "%d", i);
+                cv::putText(color_,string(num),targets[i].kp.pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+            }
+            target_update = true;
+        }
+    }
+    // else
+    // {
+    //     // detect_init = false;
+    // }
+
+    if(!keypoints.empty())
+    {
+        float obs_size = keypoints.at(0).size;
+        int obs_index = 0;
+        for (int i = 0; i < keypoints.size(); i++)
+        {
+            if(keypoints.at(i).size > obs_size)
+            {
+                obs_size = keypoints.at(i).size;
+                obs_index = i;
+            }
+        }
+        char num[1];
+        sprintf(num, "%d", 2);
+        cv::putText(color_,string(num), keypoints.at(obs_index).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+        obstacle.kp = keypoints.at(obs_index);
+        obstacle_update = true;
+    }  
+}
+
 int main(int argc, char* argv[])
 {   
     ros::init(argc, argv, "vision_detect");
@@ -55,6 +151,8 @@ int main(int argc, char* argv[])
 
     ros::Publisher gap_pose_pub = nh.advertise<geometry_msgs::PoseArray>
             ("/robocentric/camera/gap_pose2", 100);
+    ros::Publisher obs_pose_pub = nh.advertise<geometry_msgs::PoseStamped>
+            ("/robocentric/camera/ball_pos", 100);
     ros::Publisher color_pub = nh.advertise<sensor_msgs::Image>
             ("/robocentric/camera/color_raw", 100);
     sensor_msgs::Image img_msg;
@@ -63,20 +161,15 @@ int main(int argc, char* argv[])
     rs2::pipeline pipe;
     rs2::config cfg;
     rs2::colorizer color_map;
+    blob_detect_init(detector);
     cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 60);
     cfg.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16, 90);
     cfg.enable_stream(RS2_STREAM_INFRARED, 848, 480, RS2_FORMAT_Y8, 90);
     pipe.start(cfg);
     // rs2::pipeline_profile profile = pipe.start();
-    rs2::frameset frames;
-    rs2::align align_to_depth(RS2_STREAM_DEPTH);
-    ros::Rate rate(100.0);
-    // time_t t;
-    // tm* local;
-    // char buf[128] = {0};
-    // t = time(NULL);
-    // local = localtime(&t);
-    // strftime(buf, 64, "%Y-%m-%d %H:%M:%S", local);
+    
+    // rs2::align align_to_depth(RS2_STREAM_DEPTH);
+    ros::Rate rate(50.0);
     fout_vision.open("/home/yihang/catkin_ws/debug/mat_vision.txt", std::ios::out);
     fout_depth.open("/home/yihang/catkin_ws/debug/mat_depth.txt", std::ios::out);
     Eigen::Matrix<float, 3, 1> last_pub_P{0.0, 0.0, 0.0};
@@ -89,21 +182,37 @@ int main(int argc, char* argv[])
     // float depth_scale = get_depth_scale(profile.get_device());
     float depth_clipping_distance = 5.0;
     // std::cout << "depth_scale: " << depth_scale << std::endl;
-    rs2::align align_to_color(RS2_STREAM_COLOR);
+    int i = 0;
+    double total_time = 0.0;
+    double total_time1 = 0.0;
     while(ros::ok()){ 
         frames = pipe.wait_for_frames();
-        // double begin = ros::Time::now().toSec();
-        frames = align_to_color.process(frames);
-        // double end = ros::Time::now().toSec();
-        // std::cout << "align time: " << end - begin << std::endl;
         rs2::video_frame color_frame = frames.get_color_frame();
+        int width = color_frame.get_width();
+        int height = color_frame.get_height();
+        Mat color(Size(width, height), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
+        color_ = color;
+        std::thread t1(blob_detect_fun);
+        // double begin = ros::Time::now().toSec();
+        align_fun();
+        // std::thread t1(align_fun);
+        // double end = ros::Time::now().toSec();
+        // total_time1 += end - begin;
+        // std::cout << "thread 1 id: " << t1.get_id() << std::endl;
+
+        // blob detection
+        i++;
+        // double time1 = ros::Time::now().toSec();
+        // std::cout << "thread 2 id: " << t2.get_id() << std::endl;
+        // blob_detect(detector, gray, color_, depth_frame);
+        // double time2 = ros::Time::now().toSec();
+        // total_time += time2 - time1;
+
+        // t1.join();
+
         rs2::depth_frame depth_frame = frames.get_depth_frame();
         // remove_background(color_frame, depth_frame, 0.001, depth_clipping_distance);
         // rs2::frame ir_frame = frames.first(RS2_STREAM_INFRARED);
-        int width = depth_frame.get_width();
-        int height = depth_frame.get_height();
-        float dist_to_center = depth_frame.get_distance(width/2, height/2);
-        // float dist_to_center = depth_frame.data[int(width/2)][int(height/2)];
         rs2_intrinsics depth_intrins = rs2::video_stream_profile(depth_frame.get_profile()).get_intrinsics();
         // rs2_intrinsics color_intrins = rs2::video_stream_profile(color_frame.get_profile()).get_intrinsics();
         cv::Matx33f cameraMatrix = {depth_intrins.fx, 0., depth_intrins.ppx, 0, depth_intrins.fy, depth_intrins.ppy, 0, 0 ,0};
@@ -116,23 +225,11 @@ int main(int argc, char* argv[])
         // }    
         // cout << "depth intrinsics ppx" << cameraMatrix << endl;
         // rs2::frame colorized_depth = color_map.colorize(depth_frame);
-        Mat color(Size(width, height), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
-        color_ = color;
         Mat depth(Size(width, height), CV_16UC1, (void*)depth_frame.get_data(), Mat::AUTO_STEP);
         // Mat ir(Size(1280, 720), CV_8UC1, (void*)ir_frame.get_data(), Mat::AUTO_STEP);   
-        Mat gray;
         // Mat imgcanny;
-        cvtColor( color, gray, COLOR_BGR2GRAY );
-        gray_ = gray;
-        blur( gray, gray, Size(3,3) );
         bool depth_error = false;
 
-        // blob detection
-        if (!blob_init)
-        {   
-            blob_init = blob_detect_init(detector);
-        }
-        // blob_detect(detector, gray, color_, depth_frame);
 
         // gap detection 
         // depth_error = gap_detect(gray, depth_frame, color_);
@@ -148,106 +245,46 @@ int main(int argc, char* argv[])
         //     circle(color_, center, 4, Scalar(0, 255, 0), CV_FILLED);
         //     circle(color_, center, radius, Scalar(255, 0, 0), 3, 8, 0);
         // }
-
-        img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::RGB8, color_);
-        img_bridge.toImageMsg(img_msg);
-        if (!depth_error)
+        t1.join();
+        if (target_update)
         {
-            color_pub.publish(img_msg);
-        }
-        if (!P_buffer.empty() && !q_buffer.empty() && !P2_buffer.empty())
-        {
-            float distance = P_buffer[0].norm();
-            int index = 0;
-            for (int i=0; i<P_buffer.size(); i++)
-            {
-                if (P_buffer[i].norm() < distance)
-                {
-                    index = i;
-                    distance = P_buffer[i].norm();
-                }
-            }
-            std::cout << "gap index: " << index << std::endl;
-            Eigen::Matrix<float, 3, 1> pub_P = P_buffer[index];
-            Eigen::Matrix<float, 3, 1> pub_P2 = P2_buffer[index];
-            Eigen::Quaternionf pub_q = q_buffer[index];
-            std::cout << "P: " << pub_P << std::endl;
-            // std::cout << "q: " << pub_q << std::endl;
-            P_buffer.clear();
-            P2_buffer.clear();
-            q_buffer.clear();
-            if (!depth_error)
-            {
-                gap_pose.pose.position.x = pub_P[0];
-                gap_pose.pose.position.y = pub_P[1];
-                gap_pose.pose.position.z = pub_P[2];
-                gap_pose.pose.orientation.x = pub_q.x();
-                gap_pose.pose.orientation.y = pub_q.y();
-                gap_pose.pose.orientation.z = pub_q.z();
-                gap_pose.pose.orientation.w = pub_q.w();
+            get_depth(color_, depth_frame, targets[0]);
+            get_depth(color_, depth_frame, targets[1]);
+            if (targets[0].depth > 0.5 && targets[1].depth > 0.5)
+            {    
+                gap_pose.pose.position.x = targets[0].point[0];
+                gap_pose.pose.position.y = targets[0].point[1];
+                gap_pose.pose.position.z = targets[0].point[2];
                 gap_array.poses.push_back(gap_pose.pose);
-                gap_pose.pose.position.x = pub_P2[0];
-                gap_pose.pose.position.y = pub_P2[1];
-                gap_pose.pose.position.z = pub_P2[2];
+                gap_pose.pose.position.x = targets[1].point[0];
+                gap_pose.pose.position.y = targets[1].point[1];
+                gap_pose.pose.position.z = targets[1].point[2];
                 gap_array.poses.push_back(gap_pose.pose);
                 gap_array.header.stamp = ros::Time::now();
                 gap_pose_pub.publish(gap_array); 
                 gap_array.poses.clear();
-            } 
-            last_pub_P = pub_P;
+            }
         }
-        else if (!P_buffer.empty())
-        {   
-            // std::cout << "P_buffer size: " << P_buffer.size() << std::endl;
-            if (P_buffer.size() == 1)
+
+        if (obstacle_update)
+        {
+            get_depth(color_,depth_frame, obstacle);
+            if (obstacle.depth > 0.1 && obstacle.depth < 4.0)
             {
-                Eigen::Matrix<float, 3, 1> pub_P = P_buffer[0];
-                // if((last_pub_P.norm() < 0.01 || (last_pub_P - pub_P).norm()< 0.6) && pub_P.norm() > 0.2)
-                // {
-                    gap_pose.pose.position.x = pub_P[0];
-                    gap_pose.pose.position.y = pub_P[1];
-                    gap_pose.pose.position.z = pub_P[2];
-                    gap_array.poses.push_back(gap_pose.pose);
-                    gap_array.header.stamp = ros::Time::now();
-                    gap_pose_pub.publish(gap_array); 
-                    gap_array.poses.clear();
-                    last_pub_P = pub_P;
-                // }
+                obs_pose.pose.position.x = obstacle.point[0];
+                obs_pose.pose.position.y = obstacle.point[1];
+                obs_pose.pose.position.z = obstacle.point[2];
+                obs_pose.header.stamp = ros::Time::now();
+                obs_pose_pub.publish(obs_pose);
             }
-            if(P_buffer.size() == 2)
-            {
-                Eigen::Matrix<float, 3, 1> pub_P1 = P_buffer[0];
-                Eigen::Matrix<float, 3, 1> pub_P2 = P_buffer[1];
-                int i;
-                int j;
-                if (P_buffer[1][1] > P_buffer[0][1])
-                {
-                    i = 0;
-                    j = 1;
-                }
-                else
-                {
-                    i = 1;
-                    j = 0;
-                }
-                if ((last_pub_P.norm() < 0.01 || (last_pub_P - P_buffer[i]).norm()< 0.6) && (last_pub_P2.norm() < 0.01 || (last_pub_P2 - P_buffer[j]).norm()< 0.6) && P_buffer[i].norm() > 0.5 && P_buffer[j].norm() > 0.5)
-                {    
-                    gap_pose.pose.position.x = P_buffer[i][0];
-                    gap_pose.pose.position.y = P_buffer[i][1];
-                    gap_pose.pose.position.z = P_buffer[i][2];
-                    gap_array.poses.push_back(gap_pose.pose);
-                    gap_pose.pose.position.x = P_buffer[j][0];
-                    gap_pose.pose.position.y = P_buffer[j][1];
-                    gap_pose.pose.position.z = P_buffer[j][2];
-                    gap_array.poses.push_back(gap_pose.pose);
-                    gap_array.header.stamp = ros::Time::now();
-                    gap_pose_pub.publish(gap_array); 
-                    gap_array.poses.clear();
-                    last_pub_P = P_buffer[i];
-                    last_pub_P2 = P_buffer[j];
-                }
-            }
-            P_buffer.clear();
+        }
+        
+        img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::BGR8, color_);
+        img_bridge.toImageMsg(img_msg);
+
+        if (!depth_error)
+        {
+            color_pub.publish(img_msg);
         }
         
         rate.sleep();

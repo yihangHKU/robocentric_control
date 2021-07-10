@@ -42,6 +42,8 @@ vector<float> direction_ = {0, 0 , 0};
 vector<KeyPoint> last_kp;
 bool detect_init = false;
 bool write_jpg = false;
+bool target_update = false;
+bool obstacle_update = false;
 string jpg_dir = "/home/dji/catkin_ws/src/robocentric_control/image/";
 
 void plane_from_points(vector<Point3f> points)
@@ -147,7 +149,7 @@ void goodFeaturesToTrack_Demo( int, void* )
     imshow( source_window, color_);
 }
 
-void nearest_pixel_find(KeyPoint &last_kp, vector<KeyPoint> &keypoints, float minsize)
+bool nearest_pixel_find(KeyPoint &last_kp, vector<KeyPoint> &keypoints, float minsize)
 {
     int i = 0;
     int min_pos = 0;
@@ -165,16 +167,20 @@ void nearest_pixel_find(KeyPoint &last_kp, vector<KeyPoint> &keypoints, float mi
     {
         last_kp = keypoints.at(min_pos);
         keypoints.erase(keypoints.begin() + min_pos);
+        return true;
     } 
     else
     {
         cout << "distance: " << distance_min << endl;
         cout << "keypoint size: " << keypoints.at(min_pos).size << endl;
+        return false;
     }
 }
 
 void blob_detect( int, void* )
-{
+{   
+    target_update = false;
+    obstacle_update = false;
     vector<KeyPoint> keypoints; 
     // Setup SimpleBlobDetector parameters.
     SimpleBlobDetector::Params params;
@@ -225,6 +231,7 @@ void blob_detect( int, void* )
             }  
             keypoints.clear();
             detect_init = true; 
+            target_update = true;
             for (int i = 0; i < last_kp.size(); i++)
             {
                 char num[1];
@@ -239,22 +246,28 @@ void blob_detect( int, void* )
         }
     }
     else if (keypoints.size() >= 2)
-    {   
+    {       
         float min_size = min(last_kp.at(0).size, last_kp.at(1).size);
+        bool kp_match = true;
         for (int i = 0; i < last_kp.size(); i++)
         {
-            nearest_pixel_find(last_kp.at(i), keypoints, min_size);
+            kp_match = kp_match && nearest_pixel_find(last_kp.at(i), keypoints, min_size);
         }
-        if(last_kp.at(0).pt.x > last_kp.at(1).pt.x)
+        if (kp_match)
         {
-            swap(last_kp.at(0), last_kp.at(1));
+            if(last_kp.at(0).pt.x > last_kp.at(1).pt.x)
+            {
+                swap(last_kp.at(0), last_kp.at(1));
+            }
+            for (int i = 0; i < last_kp.size(); i++)
+            {
+                char num[1];
+                sprintf(num, "%d", i);
+                cv::putText(blob_image,string(num),last_kp.at(i).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+            }
+            target_update = true;
         }
-        for (int i = 0; i < last_kp.size(); i++)
-        {
-            char num[1];
-            sprintf(num, "%d", i);
-            cv::putText(blob_image,string(num),last_kp.at(i).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
-        }
+        
     }
     else
     {
@@ -264,12 +277,20 @@ void blob_detect( int, void* )
 
     if(!keypoints.empty())
     {
+        float obs_size = keypoints.at(0).size;
+        int obs_index = 0;
         for (int i = 0; i < keypoints.size(); i++)
         {
-            char num[1];
-            sprintf(num, "%d", i+2);
-            cv::putText(blob_image,string(num), keypoints.at(i).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+            if(keypoints.at(i).size > obs_size)
+            {
+                obs_size = keypoints.at(i).size;
+                obs_index = i;
+            }
         }
+        char num[1];
+        sprintf(num, "%d", 2);
+        cv::putText(blob_image,string(num), keypoints.at(obs_index).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+        obstacle_update = true;
     }
     imshow(blob_window, blob_image);   
 }
