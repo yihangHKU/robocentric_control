@@ -44,7 +44,7 @@ bool detect_init = false;
 bool write_jpg = false;
 bool target_update = false;
 bool obstacle_update = false;
-string jpg_dir = "/home/dji/catkin_ws/src/robocentric_control/image/";
+string jpg_dir = "/home/dji/catkin_ws/src/robocentric_control/image7/";
 
 void plane_from_points(vector<Point3f> points)
 {   
@@ -422,13 +422,13 @@ int main(int argc, char* argv[])
             cout << "blob_average time: " << total_time/(i+1) << endl;
         }
 
-        // createTrackbar( "blob color:", blob_window, &blobColor, maxblobColor, blob_detect );
-        // createTrackbar( "blob minCircularity:", blob_window, &minCircularity, maxCircularity, blob_detect );
-        // createTrackbar( "blob minarea:", blob_window, &blobarea, maxblobarea, blob_detect );
-        // createTrackbar( "blob minconvexity:", blob_window, &minConvexity, maxConvexity, blob_detect );
-        // createTrackbar( "blob minInertiaRatio:", blob_window, &minInertiaRatio, maxInertiaRatio, blob_detect );
-        // imshow(blob_window, color); 
-        // blob_detect(0, 0);
+        createTrackbar( "blob color:", blob_window, &blobColor, maxblobColor, blob_detect );
+        createTrackbar( "blob minCircularity:", blob_window, &minCircularity, maxCircularity, blob_detect );
+        createTrackbar( "blob minarea:", blob_window, &blobarea, maxblobarea, blob_detect );
+        createTrackbar( "blob minconvexity:", blob_window, &minConvexity, maxConvexity, blob_detect );
+        createTrackbar( "blob minInertiaRatio:", blob_window, &minInertiaRatio, maxInertiaRatio, blob_detect );
+        imshow(blob_window, color); 
+        blob_detect(0, 0);
         char key = (char)waitKey();
         if (key == '0')
         {

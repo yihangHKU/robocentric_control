@@ -66,7 +66,7 @@ void blob_detect_fun()
         // Canny(gray, imgcanny_blur, 100, 200, 3, true);
     if (!detect_init)
     {
-        if (keypoints.size() == 2 && sqrt(pow(keypoints.at(0).pt.x - keypoints.at(1).pt.x, 2) + pow(keypoints.at(0).pt.y - keypoints.at(1).pt.y, 2)) < 100.0f)
+        if (keypoints.size() == 2 && sqrt(pow(keypoints.at(0).pt.x - keypoints.at(1).pt.x, 2) + pow(keypoints.at(0).pt.y - keypoints.at(1).pt.y, 2)) < 150.0f)
         {
             if (keypoints.at(0).pt.x < keypoints.at(1).pt.x)
             {
@@ -117,6 +117,11 @@ void blob_detect_fun()
                 cv::putText(color_,string(num),targets[i].kp.pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
             }
             target_update = true;
+        }
+        else
+        {
+            detect_init = false;
+            cout << "detect false" << endl;
         }
     }
     // else
@@ -185,6 +190,8 @@ int main(int argc, char* argv[])
     int i = 0;
     double total_time = 0.0;
     double total_time1 = 0.0;
+    float last_target0_depth = 0.0;
+    float last_target1_depth = 0.0;
     while(ros::ok()){ 
         frames = pipe.wait_for_frames();
         rs2::video_frame color_frame = frames.get_color_frame();
@@ -250,7 +257,7 @@ int main(int argc, char* argv[])
         {
             get_depth(color_, depth_frame, targets[0]);
             get_depth(color_, depth_frame, targets[1]);
-            if (targets[0].depth > 0.5 && targets[1].depth > 0.5)
+            if (targets[0].depth > 0.5 && targets[1].depth > 0.5 && (abs(targets[0].depth - last_target0_depth) < 0.5 || last_target0_depth < 0.1) && (abs(targets[1].depth - last_target1_depth) < 0.5 || last_target1_depth < 0.1))
             {    
                 gap_pose.pose.position.x = targets[0].point[0];
                 gap_pose.pose.position.y = targets[0].point[1];
@@ -263,6 +270,8 @@ int main(int argc, char* argv[])
                 gap_array.header.stamp = ros::Time::now();
                 gap_pose_pub.publish(gap_array); 
                 gap_array.poses.clear();
+                last_target0_depth = targets[0].depth;
+                last_target1_depth = targets[1].depth;
             }
         }
 

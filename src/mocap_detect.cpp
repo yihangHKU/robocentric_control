@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
     ros::Subscriber ball_pos_sub = nh.subscribe("/yh_ball/viconros/mocap/pos", 1000, ball_pos_cb);
     ros::Subscriber ball_vel_sub = nh.subscribe("/yh_ball/viconros/mocap/vel", 1000, ball_vel_cb);
     ros::Subscriber aircraft_q_sub = nh.subscribe("/mavros/imu/data", 1000, aircraft_q_cb);
-    ros::Rate rate(50.0);
+    ros::Rate rate(30.0);
     for(int i = 0; i < 10; i++)
     {
         ros::spinOnce();

@@ -199,7 +199,7 @@ void blob_detect_init(Ptr<SimpleBlobDetector> &detector)
 {
     int blobColor = 255;
     float minCircularity = 0.8;
-    int blobarea = 100;
+    int blobarea = 80;
     float minConvexity = 0.85;
     float minInertiaRatio = 0.30;
     // Setup SimpleBlobDetector parameters.

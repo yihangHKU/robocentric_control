@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
     fout_out.open("/home/dji/catkin_ws/debug/mat_out.txt", std::ios::out);
     fout_input.open("/home/dji/catkin_ws/debug/imu.txt", std::ios::out);
     ros::Subscriber imu_sub = nh.subscribe("/mavros/imu/data_raw", 1000, imu_cb);
-    ros::Subscriber gap_sub = nh.subscribe("/robocentric/camera/gap_pose", 1000, gap_cb);
+    ros::Subscriber gap_sub = nh.subscribe("/robocentric/camera/gap_pose2", 1000, gap_cb);
     ros::Publisher pose_pub = nh.advertise<geometry_msgs::PoseStamped> ("robocentric/pose", 100);
     ros::Publisher point_pub = nh.advertise<geometry_msgs::PointStamped> ("robocentric/point2", 100);
     ros::Publisher grav_pub = nh.advertise<geometry_msgs::Vector3Stamped> ("robocentric/gravity", 100);
