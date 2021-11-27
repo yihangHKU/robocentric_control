@@ -31,6 +31,8 @@ Ptr<SimpleBlobDetector> detector;
 bool detect_init = false;
 bool target_update = false;
 bool obstacle_update = false;
+int blob_target_num = 1;
+// #define blob_detect_mode two_target
 target_point_t targets[2];
 target_point_t obstacle;
 
@@ -64,89 +66,135 @@ void blob_detect_fun()
         // detector.detect( gray, keypoints);
     drawKeypoints( color_, keypoints, color_, Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
         // Canny(gray, imgcanny_blur, 100, 200, 3, true);
-    if (!detect_init)
+    
+
+    switch (blob_target_num)
     {
-        if (keypoints.size() == 2 && sqrt(pow(keypoints.at(0).pt.x - keypoints.at(1).pt.x, 2) + pow(keypoints.at(0).pt.y - keypoints.at(1).pt.y, 2)) < 150.0f)
+    case 1: // one target point detect
+        if (!detect_init)
         {
-            if (keypoints.at(0).pt.x < keypoints.at(1).pt.x)
+            if (keypoints.size() == 1)
             {
                 targets[0].kp = keypoints.at(0);
-                targets[1].kp = keypoints.at(1);
+                keypoints.clear();
+                detect_init = true; 
+                target_update = true;
+                int i = 0;
+                char num[1];
+                sprintf(num, "%d", i);
+                cv::putText(color_,string(num),targets[i].kp.pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+                cout << "detect init" << endl; 
+            }
+        }
+        else if (keypoints.size() >= 1)
+        {
+            float min_size = targets[0].kp.size;
+            bool kp_match = true;
+            kp_match = nearest_pixel_find(targets[0].kp, keypoints, min_size);
+            if (kp_match)
+            {   
+                int i = 0;
+                char num[1];
+                sprintf(num, "%d", i);
+                cv::putText(color_,string(num),targets[i].kp.pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+                target_update = true;
             }
             else
             {
-                targets[0].kp = keypoints.at(1);
-                targets[1].kp = keypoints.at(0);
-            }  
-            keypoints.clear();
-            detect_init = true; 
-            target_update = true;
+                detect_init = false;
+                cout << "detect false" << endl;
+            }
+        }
+        break;
+    
+    case 2: // two target points and one may exist obstacle detect
+        if (!detect_init)
+        {
+            if (keypoints.size() == 2 && sqrt(pow(keypoints.at(0).pt.x - keypoints.at(1).pt.x, 2) + pow(keypoints.at(0).pt.y - keypoints.at(1).pt.y, 2)) < 150.0f)
+            {
+                if (keypoints.at(0).pt.x < keypoints.at(1).pt.x)
+                {
+                    targets[0].kp = keypoints.at(0);
+                    targets[1].kp = keypoints.at(1);
+                }
+                else
+                {
+                    targets[0].kp = keypoints.at(1);
+                    targets[1].kp = keypoints.at(0);
+                }  
+                keypoints.clear();
+                detect_init = true; 
+                target_update = true;
+                for (int i = 0; i < 2; i++)
+                {
+                    char num[1];
+                    sprintf(num, "%d", i);
+                    cv::putText(color_,string(num),targets[i].kp.pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+                }
+                cout << "detect init" << endl;  
+            }
+            else
+            {
+                // cout << "detect init error" << endl;
+            }
+        }
+        else if (keypoints.size() >= 2)
+        {   
+            float min_size = min(targets[0].kp.size, targets[1].kp.size);
+            bool kp_match = true;
             for (int i = 0; i < 2; i++)
             {
-                char num[1];
-                sprintf(num, "%d", i);
-                cv::putText(color_,string(num),targets[i].kp.pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+                kp_match = kp_match && nearest_pixel_find(targets[i].kp, keypoints, min_size);
             }
-            cout << "detect init" << endl;  
-        }
-        else
-        {
-            // cout << "detect init error" << endl;
-        }
-    }
-    else if (keypoints.size() >= 2)
-    {   
-        float min_size = min(targets[0].kp.size, targets[1].kp.size);
-        bool kp_match = true;
-        for (int i = 0; i < 2; i++)
-        {
-            kp_match = kp_match && nearest_pixel_find(targets[i].kp, keypoints, min_size);
-        }
-        if (kp_match)
-        {
-            if(targets[0].kp.pt.x > targets[1].kp.pt.x)
-            {   
-                KeyPoint middle = targets[0].kp;
-                targets[0].kp = targets[1].kp;
-                targets[1].kp = middle;
-            }
-            for (int i = 0; i < 2; i++)
+            if (kp_match)
             {
-                char num[1];
-                sprintf(num, "%d", i);
-                cv::putText(color_,string(num),targets[i].kp.pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+                if(targets[0].kp.pt.x > targets[1].kp.pt.x)
+                {   
+                    KeyPoint middle = targets[0].kp;
+                    targets[0].kp = targets[1].kp;
+                    targets[1].kp = middle;
+                }
+                for (int i = 0; i < 2; i++)
+                {
+                    char num[1];
+                    sprintf(num, "%d", i);
+                    cv::putText(color_,string(num),targets[i].kp.pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+                }
+                target_update = true;
             }
-            target_update = true;
+            else
+            {
+                detect_init = false;
+                cout << "detect false" << endl;
+            }
         }
-        else
-        {
-            detect_init = false;
-            cout << "detect false" << endl;
-        }
-    }
-    // else
-    // {
-    //     // detect_init = false;
-    // }
+        // else
+        // {
+        //     // detect_init = false;
+        // }
 
-    if(!keypoints.empty())
-    {
-        float obs_size = keypoints.at(0).size;
-        int obs_index = 0;
-        for (int i = 0; i < keypoints.size(); i++)
+        if(!keypoints.empty())
         {
-            if(keypoints.at(i).size > obs_size)
+            float obs_size = keypoints.at(0).size;
+            int obs_index = 0;
+            for (int i = 0; i < keypoints.size(); i++)
             {
-                obs_size = keypoints.at(i).size;
-                obs_index = i;
+                if(keypoints.at(i).size > obs_size)
+                {
+                    obs_size = keypoints.at(i).size;
+                    obs_index = i;
+                }
             }
-        }
-        char num[1];
-        sprintf(num, "%d", 2);
-        cv::putText(color_,string(num), keypoints.at(obs_index).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
-        obstacle.kp = keypoints.at(obs_index);
-        obstacle_update = true;
-    }  
+            char num[1];
+            sprintf(num, "%d", 2);
+            cv::putText(color_,string(num), keypoints.at(obs_index).pt,cv::FONT_HERSHEY_DUPLEX,0.5,cv::Scalar(0,255,0),2,false);
+            obstacle.kp = keypoints.at(obs_index);
+            obstacle_update = true;
+        }  
+        break;
+    default:
+        break;
+    }
 }
 
 int main(int argc, char* argv[])
@@ -253,27 +301,54 @@ int main(int argc, char* argv[])
         //     circle(color_, center, radius, Scalar(255, 0, 0), 3, 8, 0);
         // }
         t1.join();
-        if (target_update)
+        switch (blob_target_num)
         {
-            get_depth(color_, depth_frame, targets[0]);
-            get_depth(color_, depth_frame, targets[1]);
-            if (targets[0].depth > 0.5 && targets[1].depth > 0.5 && (abs(targets[0].depth - last_target0_depth) < 0.5 || last_target0_depth < 0.1) && (abs(targets[1].depth - last_target1_depth) < 0.5 || last_target1_depth < 0.1))
-            {    
-                gap_pose.pose.position.x = targets[0].point[0];
-                gap_pose.pose.position.y = targets[0].point[1];
-                gap_pose.pose.position.z = targets[0].point[2];
-                gap_array.poses.push_back(gap_pose.pose);
-                gap_pose.pose.position.x = targets[1].point[0];
-                gap_pose.pose.position.y = targets[1].point[1];
-                gap_pose.pose.position.z = targets[1].point[2];
-                gap_array.poses.push_back(gap_pose.pose);
-                gap_array.header.stamp = ros::Time::now();
-                gap_pose_pub.publish(gap_array); 
-                gap_array.poses.clear();
-                last_target0_depth = targets[0].depth;
-                last_target1_depth = targets[1].depth;
+        case 1:
+            if (target_update)
+            {
+                get_depth(color_, depth_frame, targets[0]);
+                if (targets[0].depth > 0.5 && (abs(targets[0].depth - last_target0_depth) < 0.5 || last_target0_depth < 0.1))
+                {    
+                    gap_pose.pose.position.x = targets[0].point[0];
+                    gap_pose.pose.position.y = targets[0].point[1];
+                    gap_pose.pose.position.z = targets[0].point[2];
+                    gap_array.poses.push_back(gap_pose.pose);
+                    gap_array.header.stamp = ros::Time::now();
+                    gap_pose_pub.publish(gap_array); 
+                    gap_array.poses.clear();
+                    last_target0_depth = targets[0].depth;
+                }
             }
+            break;
+        
+        case 2: 
+            if (target_update)
+            {
+                get_depth(color_, depth_frame, targets[0]);
+                get_depth(color_, depth_frame, targets[1]);
+                if (targets[0].depth > 0.5 && targets[1].depth > 0.5 && (abs(targets[0].depth - last_target0_depth) < 0.5 || last_target0_depth < 0.1) && (abs(targets[1].depth - last_target1_depth) < 0.5 || last_target1_depth < 0.1))
+                {    
+                    gap_pose.pose.position.x = targets[0].point[0];
+                    gap_pose.pose.position.y = targets[0].point[1];
+                    gap_pose.pose.position.z = targets[0].point[2];
+                    gap_array.poses.push_back(gap_pose.pose);
+                    gap_pose.pose.position.x = targets[1].point[0];
+                    gap_pose.pose.position.y = targets[1].point[1];
+                    gap_pose.pose.position.z = targets[1].point[2];
+                    gap_array.poses.push_back(gap_pose.pose);
+                    gap_array.header.stamp = ros::Time::now();
+                    gap_pose_pub.publish(gap_array); 
+                    gap_array.poses.clear();
+                    last_target0_depth = targets[0].depth;
+                    last_target1_depth = targets[1].depth;
+                }
+            }
+            break;
+        
+        default:
+            break;
         }
+        
 
         if (obstacle_update)
         {

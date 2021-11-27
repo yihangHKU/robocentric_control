@@ -41,10 +41,10 @@ float centroid_[3] = {0, 0, 0};
 vector<float> direction_ = {0, 0 , 0};
 vector<KeyPoint> last_kp;
 bool detect_init = false;
-bool write_jpg = false;
+bool write_jpg = true;
 bool target_update = false;
 bool obstacle_update = false;
-string jpg_dir = "/home/dji/catkin_ws/src/robocentric_control/image7/";
+string jpg_dir = "/home/dji/catkin_ws/src/robocentric_control/image_avoid/";
 
 void plane_from_points(vector<Point3f> points)
 {   
@@ -333,6 +333,7 @@ void color_cb(const sensor_msgs::Image::ConstPtr &msg)
     // cvtColor( color, gray, COLOR_BGR2GRAY );
     // blur( gray, gray, Size(3,3) );
     color_deque.push_back(color);
+    // ros::Duration(0.2).sleep();
     // if (color_deque.size() < 100)
     // {
     //     color_deque.push_back(color);
@@ -377,7 +378,7 @@ int main(int argc, char* argv[])
     // Mat depth(Size(width, height), CV_16UC1, (void*)depth_frame.get_data(), Mat::AUTO_STEP);
     // Mat ir(Size(848, 480), CV_8UC1, (void*)ir_frame.get_data(), Mat::AUTO_STEP);
 
-    ros::Subscriber color_sub = nh.subscribe("/robocentric/camera/color_raw", 1000, color_cb);
+    ros::Subscriber color_sub = nh.subscribe("/robocentric/camera/color_raw", 1, color_cb);
     ros::Publisher color_pub = nh.advertise<sensor_msgs::Image>
             ("camera/blob_detect", 10);
     vector<Vec3f> circles;

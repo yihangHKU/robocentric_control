@@ -4,9 +4,9 @@
 #include <mutex>
 #include <deque>
 // #include "state_estim_gap.hpp"
-// #include "state_estim_hover.hpp"
+#include "state_estim_hover.hpp"
 //#include "state_estim_hover2.hpp"
-#include "state_estim_hover3.hpp"
+// #include "state_estim_hover3.hpp"
 #include <sensor_msgs/Imu.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PointStamped.h>
@@ -234,9 +234,9 @@ int main(int argc, char* argv[])
             grav.vector.z = s.grav.vec[2];
             grav_pub.publish(grav);
             line.header.stamp = ros::Time::now();
-            line.vector.x = s.line.vec[0];
-            line.vector.y = s.line.vec[1];
-            line.vector.z = s.line.vec[2];
+            // line.vector.x = s.line.vec[0];
+            // line.vector.y = s.line.vec[1];
+            // line.vector.z = s.line.vec[2];
             line_pub.publish(line);
             vel.header.stamp = ros::Time::now();
             vel.vector.x = s.vel[0];
